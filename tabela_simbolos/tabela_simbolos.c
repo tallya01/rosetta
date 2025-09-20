@@ -126,7 +126,7 @@ Symbol* inserir_funcao(ScopeStack* pilha, const char* nome, Tipo tipo_retorno, i
     return inserir_no_escopo_atual(pilha, novo_simbolo);
 }
 
-// Função auxiliar para e - conforme especificado no documento [cite: 1587]
+// Função auxiliar para e - conforme especificado no documento
 void adicionar_info_parametro(Symbol* simbolo_funcao, const char* nome_param, Tipo tipo_param) {
     if (!simbolo_funcao || simbolo_funcao->categoria != CAT_FUNCAO) return;
 
