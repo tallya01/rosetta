@@ -14,7 +14,7 @@ CFLAGS = -Wall -Wno-unused-function -I $(TS_DIR) -DGOIANINHA_PARSER
 LDFLAGS = -lfl
 
 # Arquivos de objeto (.o) que serão gerados
-OBJS = y.tab.o lex.yy.o tabela_simbolos.o
+OBJS = y.tab.o lex.yy.o tabela_simbolos.o ast.o semantico.o
 # --------------------
 
 # Regra padrão: compila tudo
@@ -33,10 +33,16 @@ lex.yy.c: goianinha.l y.tab.h
 	flex goianinha.l
 
 # Regras para compilar os arquivos .c em .o
-y.tab.o: y.tab.c $(TS_DIR)/tabela_simbolos.h
+y.tab.o: y.tab.c $(TS_DIR)/tabela_simbolos.h ast.h semantico.h
 	$(CC) $(CFLAGS) -c $< -o $@
 
 lex.yy.o: lex.yy.c
+	$(CC) $(CFLAGS) -c $< -o $@
+
+ast.o: ast.c ast.h
+	$(CC) $(CFLAGS) -c $< -o $@
+
+semantico.o: semantico.c semantico.h ast.h $(TS_DIR)/tabela_simbolos.h
 	$(CC) $(CFLAGS) -c $< -o $@
 
 # Regra específica para compilar tabela_simbolos.o, buscando os fontes no diretório correto

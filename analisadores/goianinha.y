@@ -5,6 +5,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include "tabela_simbolos.h"
+#include "ast.h"
 
 extern int yylex();
 extern int yylineno;
@@ -13,52 +14,11 @@ extern FILE *yyin;
 
 void yyerror(const char *s);
 
-typedef enum {
-    NO_PROGRAMA,
-    NO_DECL_FUNC,
-    NO_DECL_VAR,
-    NO_BLOCO,
-    NO_SE,
-    NO_ENQUANTO,
-    NO_ATRIBUICAO,
-    NO_RETORNE,
-    NO_LEIA,
-    NO_ESCREVA,
-    NO_SOMA, NO_SUB, NO_MULT, NO_DIV,
-    NO_IGUAL, NO_DIF, NO_MAIOR, NO_MENOR, NO_MAIOR_IGUAL, NO_MENOR_IGUAL,
-    NO_E, NO_OU, NO_NEG,
-    NO_ID,
-    NO_INT_CONST,
-    NO_CAR_CONST,
-    NO_CHAMADA_FUNC,
-    NO_LISTA,      /* Para sequências de comandos ou declarações */
-    NO_NOVALINHA,
-    NO_NULO        /* Para nós vazios */
-} TipoNo;
-
-typedef struct ASTNode {
-    TipoNo tipo;
-    int linha;              
-    char *valor_lexico;     /* Para IDs e Strings */
-    int valor_int;          /* Para constantes inteiras */
-    Tipo tipo_dado;         /* TIPO_INT, TIPO_CAR (para análise semântica) */
-    
-    struct ASTNode *filho[3]; /* Até 3 filhos (ex: IF expr ENTAO cmd SENAO cmd) */
-    struct ASTNode *prox;     /* Para listas encadeadas de comandos/decls */
-} ASTNode;
-
 ScopeStack* g_pilha_escopos;
 Tipo g_tipo_atual;
 int g_ordem_var = 0;
 Symbol* g_funcao_atual = NULL;
 ASTNode* g_raiz_ast = NULL;
-
-ASTNode* criar_no(TipoNo tipo, ASTNode* f1, ASTNode* f2, ASTNode* f3);
-ASTNode* criar_folha_id(char* lexema);
-ASTNode* criar_folha_int(int valor);
-ASTNode* criar_folha_car(char* lexema);
-void imprimir_ast(ASTNode* no, int nivel);
-void liberar_ast(ASTNode* no);
 
 %}
 
@@ -104,7 +64,7 @@ void liberar_ast(ASTNode* no);
 Programa:
     DeclFuncVar DeclProg
     {
-        $$ = criar_no(NO_PROGRAMA, $1, $2, NULL);
+        $$ = criar_no(NO_PROGRAMA, $1, $2, NULL, yylineno);
         g_raiz_ast = $$; /* Salva na variável global */
     }
     ;
@@ -141,10 +101,10 @@ DeclVarGlobal:
     }
     ListaDeclVarCont T_PVIRGULA
     {
-        ASTNode *id_node = criar_folha_id($2);
+        ASTNode *id_node = criar_folha_id($2, yylineno);
         id_node->tipo_dado = $1;
         
-        ASTNode *decl_node = criar_no(NO_DECL_VAR, id_node, NULL, NULL);
+        ASTNode *decl_node = criar_no(NO_DECL_VAR, id_node, NULL, NULL, yylineno);
         decl_node->tipo_dado = $1;
         
         decl_node->prox = $4; 
@@ -166,9 +126,9 @@ ListaDeclVarCont:
             YYABORT;
         }
         
-        ASTNode *id_node = criar_folha_id($3);
+        ASTNode *id_node = criar_folha_id($3, yylineno);
            
-        ASTNode *decl_node = criar_no(NO_DECL_VAR, id_node, NULL, NULL);
+        ASTNode *decl_node = criar_no(NO_DECL_VAR, id_node, NULL, NULL, yylineno);
         
          if ($1 == NULL) {
             $$ = decl_node;
@@ -194,9 +154,9 @@ DeclFunc:
     {
         remover_escopo_atual(g_pilha_escopos);
         
-        ASTNode *id_func = criar_folha_id($1->nome);
+        ASTNode *id_func = criar_folha_id($1->nome, yylineno);
         
-        $$ = criar_no(NO_DECL_FUNC, id_func, $4, $6);
+        $$ = criar_no(NO_DECL_FUNC, id_func, $4, $6, yylineno);
         $$->tipo_dado = $1->tipo;
         
         g_funcao_atual = NULL;
@@ -231,8 +191,8 @@ ListaParametrosCont:
         g_funcao_atual->num_args++;
         g_ordem_var++;
         
-        ASTNode *id_node = criar_folha_id($2);
-        $$ = criar_no(NO_DECL_VAR, id_node, NULL, NULL);
+        ASTNode *id_node = criar_folha_id($2, yylineno);
+        $$ = criar_no(NO_DECL_VAR, id_node, NULL, NULL, yylineno);
         $$->tipo_dado = $1;
         
         free($2);
@@ -245,8 +205,8 @@ ListaParametrosCont:
         g_funcao_atual->num_args++;
         g_ordem_var++;
         
-        ASTNode *id_node = criar_folha_id($4);
-        ASTNode *param_node = criar_no(NO_DECL_VAR, id_node, NULL, NULL);
+        ASTNode *id_node = criar_folha_id($4, yylineno);
+        ASTNode *param_node = criar_no(NO_DECL_VAR, id_node, NULL, NULL, yylineno);
         param_node->tipo_dado = $3;
         
         if ($1 == NULL) {
@@ -279,7 +239,7 @@ Bloco:
     T_LCHAVE ListaDeclVar ListaComando T_RCHAVE
     {
         /* Bloco contem lista de declarações locais e lista de comandos */
-        $$ = criar_no(NO_BLOCO, $2, $3, NULL);
+        $$ = criar_no(NO_BLOCO, $2, $3, NULL, yylineno);
     }
     ;
 
@@ -311,8 +271,8 @@ DeclVarLocal:
     }
     ListaDeclVarCont T_PVIRGULA
     {
-        ASTNode *id_node = criar_folha_id($2);
-        ASTNode *decl_node = criar_no(NO_DECL_VAR, id_node, NULL, NULL);
+        ASTNode *id_node = criar_folha_id($2, yylineno);
+        ASTNode *decl_node = criar_no(NO_DECL_VAR, id_node, NULL, NULL, yylineno);
         decl_node->tipo_dado = $1;
         decl_node->prox = $4; /* Encadeia outras vars da mesma linha: int a, b; */
         
@@ -343,14 +303,14 @@ ListaComando:
 
 Comando:
     Expr T_PVIRGULA          { $$ = $1; }
-    | T_PVIRGULA             { $$ = criar_no(NO_NULO, NULL, NULL, NULL); }
+    | T_PVIRGULA             { $$ = criar_no(NO_NULO, NULL, NULL, NULL, yylineno); }
     | BlocoComoComando       { $$ = $1; }
     | ComandoSe              { $$ = $1; }
     | ComandoEnquanto        { $$ = $1; }
     | ComandoLeia            { $$ = $1; }
     | ComandoEscreva         { $$ = $1; }
     | ComandoRetorne         { $$ = $1; }
-    | T_NOVALINHA T_PVIRGULA { $$ = criar_no(NO_NOVALINHA, NULL, NULL, NULL); }
+    | T_NOVALINHA T_PVIRGULA { $$ = criar_no(NO_NOVALINHA, NULL, NULL, NULL, yylineno); }
     ;
 
 BlocoComoComando:
@@ -373,56 +333,56 @@ Atribuicao:
             yyerror(erro_msg); 
             YYABORT; 
         } 
-        ASTNode *id_node = criar_folha_id($1);
-        $$ = criar_no(NO_ATRIBUICAO, id_node, $3, NULL);
+        ASTNode *id_node = criar_folha_id($1, yylineno);
+        $$ = criar_no(NO_ATRIBUICAO, id_node, $3, NULL, yylineno);
         free($1);
     }
     ;
 
 OrExpr:
     AndExpr { $$ = $1; }
-    | OrExpr T_OU AndExpr { $$ = criar_no(NO_OU, $1, $3, NULL); }
+    | OrExpr T_OU AndExpr { $$ = criar_no(NO_OU, $1, $3, NULL, yylineno); }
     ;
 
 AndExpr:
     EqExpr { $$ = $1; }
-    | AndExpr T_E EqExpr { $$ = criar_no(NO_E, $1, $3, NULL); }
+    | AndExpr T_E EqExpr { $$ = criar_no(NO_E, $1, $3, NULL, yylineno); }
     ;
 
 EqExpr:
     DesigExpr { $$ = $1; }
-    | EqExpr T_EQ DesigExpr { $$ = criar_no(NO_IGUAL, $1, $3, NULL); }
-    | EqExpr T_NE DesigExpr { $$ = criar_no(NO_DIF, $1, $3, NULL); }
+    | EqExpr T_EQ DesigExpr { $$ = criar_no(NO_IGUAL, $1, $3, NULL, yylineno); }
+    | EqExpr T_NE DesigExpr { $$ = criar_no(NO_DIF, $1, $3, NULL, yylineno); }
     ;
 
 DesigExpr:
     AddExpr { $$ = $1; }
-    | DesigExpr T_MENOR AddExpr { $$ = criar_no(NO_MENOR, $1, $3, NULL); }
-    | DesigExpr T_MAIOR AddExpr { $$ = criar_no(NO_MAIOR, $1, $3, NULL); }
-    | DesigExpr T_LE AddExpr    { $$ = criar_no(NO_MENOR_IGUAL, $1, $3, NULL); }
-    | DesigExpr T_GE AddExpr    { $$ = criar_no(NO_MAIOR_IGUAL, $1, $3, NULL); }
+    | DesigExpr T_MENOR AddExpr { $$ = criar_no(NO_MENOR, $1, $3, NULL, yylineno); }
+    | DesigExpr T_MAIOR AddExpr { $$ = criar_no(NO_MAIOR, $1, $3, NULL, yylineno); }
+    | DesigExpr T_LE AddExpr    { $$ = criar_no(NO_MENOR_IGUAL, $1, $3, NULL, yylineno); }
+    | DesigExpr T_GE AddExpr    { $$ = criar_no(NO_MAIOR_IGUAL, $1, $3, NULL, yylineno); }
     ;
 
 AddExpr:
     MulExpr { $$ = $1; }
-    | AddExpr T_SOMA MulExpr { $$ = criar_no(NO_SOMA, $1, $3, NULL); }
-    | AddExpr T_SUB MulExpr  { $$ = criar_no(NO_SUB, $1, $3, NULL); }
+    | AddExpr T_SOMA MulExpr { $$ = criar_no(NO_SOMA, $1, $3, NULL, yylineno); }
+    | AddExpr T_SUB MulExpr  { $$ = criar_no(NO_SUB, $1, $3, NULL, yylineno); }
     ;
 
 MulExpr:
     UnExpr { $$ = $1; }
-    | MulExpr T_MULT UnExpr { $$ = criar_no(NO_MULT, $1, $3, NULL); }
-    | MulExpr T_DIV UnExpr  { $$ = criar_no(NO_DIV, $1, $3, NULL); }
+    | MulExpr T_MULT UnExpr { $$ = criar_no(NO_MULT, $1, $3, NULL, yylineno); }
+    | MulExpr T_DIV UnExpr  { $$ = criar_no(NO_DIV, $1, $3, NULL, yylineno); }
     ;
 
 UnExpr:
     PrimExpr { $$ = $1; }
     | T_SUB UnExpr { 
         /* Subtração unária (negativo aritmético) */
-        ASTNode *zero = criar_folha_int(0);
-        $$ = criar_no(NO_SUB, zero, $2, NULL); 
+        ASTNode *zero = criar_folha_int(0, yylineno);
+        $$ = criar_no(NO_SUB, zero, $2, NULL, yylineno); 
       }
-    | T_NEG UnExpr { $$ = criar_no(NO_NEG, $2, NULL, NULL); }
+    | T_NEG UnExpr { $$ = criar_no(NO_NEG, $2, NULL, NULL, yylineno); }
     ;
 
 PrimExpr:
@@ -433,23 +393,23 @@ PrimExpr:
             sprintf(erro_msg, "Simbolo '%s' nao declarado.", $1);
             yyerror(erro_msg); YYABORT;
         }
-        $$ = criar_folha_id($1);
+        $$ = criar_folha_id($1, yylineno);
         free($1);
     }
     | T_ID T_LPAREN T_RPAREN
     {
-         ASTNode *id_node = criar_folha_id($1);
-         $$ = criar_no(NO_CHAMADA_FUNC, id_node, NULL, NULL);
+         ASTNode *id_node = criar_folha_id($1, yylineno);
+         $$ = criar_no(NO_CHAMADA_FUNC, id_node, NULL, NULL, yylineno);
          free($1);
     }
     | T_ID T_LPAREN ListExpr T_RPAREN
     {
-         ASTNode *id_node = criar_folha_id($1);
-         $$ = criar_no(NO_CHAMADA_FUNC, id_node, $3, NULL);
+         ASTNode *id_node = criar_folha_id($1, yylineno);
+         $$ = criar_no(NO_CHAMADA_FUNC, id_node, $3, NULL, yylineno);
          free($1);
     }
-    | T_INTCONST { $$ = criar_folha_int($1); }
-    | T_CARCONST { $$ = criar_folha_car($1); free($1); }
+    | T_INTCONST { $$ = criar_folha_int($1, yylineno); }
+    | T_CARCONST { $$ = criar_folha_car($1, yylineno); free($1); }
     | T_LPAREN Expr T_RPAREN { $$ = $2; }
     ;
 
@@ -472,19 +432,19 @@ ComandoSe:
     T_SE T_LPAREN Expr T_RPAREN T_ENTAO Comando %prec T_ENTAO
     {
         /* IF sem ELSE: Filho1=Expr, Filho2=Comando, Filho3=NULL */
-        $$ = criar_no(NO_SE, $3, $6, NULL);
+        $$ = criar_no(NO_SE, $3, $6, NULL, yylineno);
     }
     | T_SE T_LPAREN Expr T_RPAREN T_ENTAO Comando T_SENAO Comando
     {
         /* IF com ELSE: Filho1=Expr, Filho2=CmdThen, Filho3=CmdElse */
-        $$ = criar_no(NO_SE, $3, $6, $8);
+        $$ = criar_no(NO_SE, $3, $6, $8, yylineno);
     }
     ;
 
 ComandoEnquanto:
     T_ENQUANTO T_LPAREN Expr T_RPAREN T_EXECUTE Comando
     {
-        $$ = criar_no(NO_ENQUANTO, $3, $6, NULL);
+        $$ = criar_no(NO_ENQUANTO, $3, $6, NULL, yylineno);
     }
     ;
 
@@ -497,19 +457,19 @@ ComandoLeia:
             yyerror(erro_msg);
             YYABORT; 
         }
-        ASTNode *id_node = criar_folha_id($2);
-        $$ = criar_no(NO_LEIA, id_node, NULL, NULL);
+        ASTNode *id_node = criar_folha_id($2, yylineno);
+        $$ = criar_no(NO_LEIA, id_node, NULL, NULL, yylineno);
         free($2);
     }
     ;
 
 ComandoEscreva:
-    T_ESCREVA Expr T_PVIRGULA { $$ = criar_no(NO_ESCREVA, $2, NULL, NULL); }
+    T_ESCREVA Expr T_PVIRGULA { $$ = criar_no(NO_ESCREVA, $2, NULL, NULL, yylineno); }
     | T_ESCREVA T_CADEIA T_PVIRGULA
     {
         /* Tratamento de string literal no escreva */
-        ASTNode *str_node = criar_folha_id($2);
-        $$ = criar_no(NO_ESCREVA, str_node, NULL, NULL);
+        ASTNode *str_node = criar_folha_id($2, yylineno);
+        $$ = criar_no(NO_ESCREVA, str_node, NULL, NULL, yylineno);
         free($2);
     }
     ;
@@ -517,96 +477,11 @@ ComandoEscreva:
 ComandoRetorne: 
     T_RETORNE Expr T_PVIRGULA
     {
-        $$ = criar_no(NO_RETORNE, $2, NULL, NULL);
+        $$ = criar_no(NO_RETORNE, $2, NULL, NULL, yylineno);
     }
     ;
 
 %%
-/* --- Seção 3: Código C Adicional e Implementação da AST --- */
-
-ASTNode* criar_no(TipoNo tipo, ASTNode* f1, ASTNode* f2, ASTNode* f3) {
-    ASTNode* no = (ASTNode*) malloc(sizeof(ASTNode));
-    if (no != NULL) {
-        no->tipo = tipo;
-        no->linha = yylineno; 
-        no->valor_lexico = NULL;
-        no->filho[0] = f1;
-        no->filho[1] = f2;
-        no->filho[2] = f3;
-        no->prox = NULL;
-    }
-    return no;
-}
-
-ASTNode* criar_folha_id(char* lexema) {
-    ASTNode* no = criar_no(NO_ID, NULL, NULL, NULL);
-    if (no != NULL && lexema != NULL) {
-        no->valor_lexico = strdup(lexema); /* Copia a string */
-    }
-    return no;
-}
-
-ASTNode* criar_folha_int(int valor) {
-    ASTNode* no = criar_no(NO_INT_CONST, NULL, NULL, NULL);
-    if (no != NULL) {
-        no->valor_int = valor;
-    }
-    return no;
-}
-
-ASTNode* criar_folha_car(char* lexema) {
-    ASTNode* no = criar_no(NO_CAR_CONST, NULL, NULL, NULL);
-    if (no != NULL && lexema != NULL) {
-        no->valor_lexico = strdup(lexema);
-    }
-    return no;
-}
-
-/* Função auxiliar para imprimir a AST (visualização) */
-void imprimir_ast(ASTNode* no, int nivel) {
-    if (no == NULL) return;
-
-    for (int i = 0; i < nivel; i++) printf("  ");
-    
-    switch(no->tipo) {
-        case NO_PROGRAMA: printf("PROGRAMA\n"); break;
-        case NO_DECL_FUNC: printf("FUNC_DECL\n"); break;
-        case NO_DECL_VAR: printf("VAR_DECL\n"); break;
-        case NO_BLOCO: printf("BLOCO\n"); break;
-        case NO_SE: printf("SE\n"); break;
-        case NO_ENQUANTO: printf("ENQUANTO\n"); break;
-        case NO_ATRIBUICAO: printf("ATRIBUICAO\n"); break;
-        case NO_LEIA: printf("LEIA\n"); break;
-        case NO_ESCREVA: printf("ESCREVA\n"); break;
-        case NO_SOMA: printf("SOMA (+)\n"); break;
-        case NO_SUB: printf("SUB (-)\n"); break;
-        case NO_MULT: printf("MULT (*)\n"); break;
-        case NO_DIV: printf("DIV (/)\n"); break;
-        case NO_ID: printf("ID: %s\n", no->valor_lexico); break;
-        case NO_INT_CONST: printf("INT: %d\n", no->valor_int); break;
-        case NO_CAR_CONST: printf("CAR: %s\n", no->valor_lexico); break;
-        case NO_CHAMADA_FUNC: printf("CHAMADA_FUNC\n"); break;
-        default: printf("NO_TIPO_%d\n", no->tipo);
-    }
-
-    imprimir_ast(no->filho[0], nivel + 1);
-    imprimir_ast(no->filho[1], nivel + 1);
-    imprimir_ast(no->filho[2], nivel + 1);
-    
-    if (no->prox != NULL) {
-        imprimir_ast(no->prox, nivel);
-    }
-}
-
-void liberar_ast(ASTNode* no) {
-    if (no == NULL) return;
-    liberar_ast(no->filho[0]);
-    liberar_ast(no->filho[1]);
-    liberar_ast(no->filho[2]);
-    liberar_ast(no->prox);
-    if (no->valor_lexico) free(no->valor_lexico);
-    free(no);
-}
 
 int main(int argc, char **argv) {
     if (argc > 1) {
