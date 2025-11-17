@@ -8,7 +8,7 @@ TARGET = goianinha
 TS_DIR = ../tabela_simbolos
 
 # Ativa warnings, seta diretório da tabela e ignora função main do léxico
-CFLAGS = -Wall -Wno-unused-function -I$(TS_DIR) -DGOIANINHA_PARSER
+CFLAGS = -Wall -Wno-unused-function -I $(TS_DIR) -DGOIANINHA_PARSER
 
 # Inclui a lib do Flex na linkagem
 LDFLAGS = -lfl
