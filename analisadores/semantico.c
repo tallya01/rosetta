@@ -66,9 +66,6 @@ void analisar_no(ASTNode* no, ScopeStack* pilha) {
 
         case NO_DECL_VAR:
         {
-            /* Validação de declaração de variável */
-            /* NOTA: O parser Goianinha encadeia decls via 'prox'. 
-               Aqui inserimos na tabela para validar uso posterior. */
             ASTNode* atual = no;
             while (atual != NULL && atual->tipo == NO_DECL_VAR) {
                 ASTNode* id_node = atual->filho[0]; // NO_ID
@@ -113,7 +110,6 @@ void analisar_no(ASTNode* no, ScopeStack* pilha) {
                 // Adiciona info dos parâmetros na struct da função (para checagem de chamadas)
                 if (sym_func != NULL) {
                     ASTNode* p = params;
-                    int ordem = 0;
                     while(p != NULL) {
                         ASTNode* p_id = p->filho[0];
                         adicionar_info_parametro(sym_func, p_id->valor_lexico, p->tipo_dado);
@@ -122,13 +118,6 @@ void analisar_no(ASTNode* no, ScopeStack* pilha) {
                     }
                 }
             }
-
-            /* 4. Analisar Bloco da função */
-            /* O NO_BLOCO vai criar outro escopo? Goianinha define params no mesmo nível do corpo.
-               Para simplificar, vamos analisar o corpo SEM criar outro escopo se o corpo for NO_BLOCO,
-               ou tratar NO_BLOCO para não criar escopo se for corpo de função. 
-               Nesta implementação: vamos assumir que NO_DECL_FUNC gerencia o escopo dos params
-               e o NO_BLOCO interno cria um escopo aninhado (padrão C). */
             
             analisar_no(no->filho[2], pilha); 
 
@@ -158,7 +147,7 @@ void analisar_no(ASTNode* no, ScopeStack* pilha) {
                 sprintf(msg, "Variavel '%s' nao declarada.", id_node->valor_lexico);
                 erro_semantico(no->linha, msg);
             } else {
-                /* Validação de tipos (Requisito Parte 2) [cite: 2169] */
+                /* Validação de tipos (Requisito Parte 2) */
                 Tipo t_expr = inferir_tipo_expressao(expr, pilha);
                 if (t_expr != sym->tipo) {
                     char msg[100];
@@ -190,9 +179,6 @@ void analisar_no(ASTNode* no, ScopeStack* pilha) {
             if (no->filho[0]->tipo != NO_ID || pesquisar_simbolo(pilha, no->filho[0]->valor_lexico) != NULL) {
                  inferir_tipo_expressao(no->filho[0], pilha);
             }
-            /* Se for string literal (que no parser vira NO_ID sem declaracao mas vindo de T_CADEIA), 
-               o parser deve tratar diferentemente ou aqui ignoramos se não achar simbolo mas for literal.
-               Para simplificar, assume-se que o parser tratou CADEIA corretamente. */
             break;
 
         case NO_RETORNE:
@@ -268,7 +254,7 @@ Tipo inferir_tipo_expressao(ASTNode* no, ScopeStack* pilha) {
                 return TIPO_INT;
             }
             
-            /* Validação de argumentos [cite: 2164] */
+            /* Validação de argumentos */
             ASTNode* arg = no->filho[1];
             int count = 0;
             
@@ -305,7 +291,7 @@ Tipo inferir_tipo_expressao(ASTNode* no, ScopeStack* pilha) {
             return func->tipo;
         }
 
-        /* Operações Aritméticas: Exigem INT e retornam INT [cite: 2170] */
+        /* Operações Aritméticas: Exigem INT e retornam INT */
         case NO_SOMA:
         case NO_SUB:
         case NO_MULT:
@@ -327,7 +313,7 @@ Tipo inferir_tipo_expressao(ASTNode* no, ScopeStack* pilha) {
             return TIPO_INT;
         }
 
-        /* Operações Relacionais/Lógicas: Operandos devem ser iguais, Retorna INT (pseudo-bool) [cite: 2175] */
+        /* Operações Relacionais/Lógicas: Operandos devem ser iguais, Retorna INT (pseudo-bool) */
         case NO_IGUAL:
         case NO_DIF:
         case NO_MAIOR:
@@ -339,7 +325,7 @@ Tipo inferir_tipo_expressao(ASTNode* no, ScopeStack* pilha) {
             Tipo t2 = inferir_tipo_expressao(no->filho[1], pilha);
             
             /* Goianinha permite comparar CAR com CAR? 
-               O texto diz "Relacionais devem ser aplicados a operandos de mesmo tipo"[cite: 2171]. */
+               O texto diz "Relacionais devem ser aplicados a operandos de mesmo tipo". */
             if (t1 != t2) {
                 erro_semantico(no->linha, "Comparacao entre tipos diferentes.");
             }

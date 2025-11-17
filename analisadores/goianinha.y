@@ -6,6 +6,7 @@
 #include <string.h>
 #include "tabela_simbolos.h"
 #include "ast.h"
+#include "semantico.h"
 
 extern int yylex();
 extern int yylineno;
@@ -498,13 +499,18 @@ int main(int argc, char **argv) {
 
     int parse_result = yyparse();
     if (parse_result == 0) {
-        printf("\n--- Conteudo Final da Tabela de Simbolos ---\n");
-        imprimir_pilha(g_pilha_escopos);
+        /* printf("\n--- Conteudo Final da Tabela de Simbolos ---\n"); */
+        /* imprimir_pilha(g_pilha_escopos); */
         
-        printf("\n--- Arvore Sintatica Abstrata (AST) ---\n");
-        imprimir_ast(g_raiz_ast, 0);
-        
+        /* printf("\n--- Arvore Sintatica Abstrata (AST) ---\n"); */
+        /* imprimir_ast(g_raiz_ast, 0); */
+
         printf("\nAnalise sintatica bem-sucedida!\n");
+
+        int semantico_result = verificar_semantica(g_raiz_ast);
+        if(semantico_result == 0) {
+            /* realizar geração de código */
+        }
     }
 
     eliminar_pilha_tabelas(g_pilha_escopos);
