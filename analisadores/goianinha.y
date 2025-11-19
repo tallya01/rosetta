@@ -7,6 +7,7 @@
 #include "tabela_simbolos.h"
 #include "ast.h"
 #include "semantico.h"
+/* #include "gerador_codigo.h" */
 
 extern int yylex();
 extern int yylineno;
@@ -15,10 +16,7 @@ extern FILE *yyin;
 
 void yyerror(const char *s);
 
-ScopeStack* g_pilha_escopos;
 Tipo g_tipo_atual;
-int g_ordem_var = 0;
-Symbol* g_funcao_atual = NULL;
 ASTNode* g_raiz_ast = NULL;
 
 %}
@@ -27,7 +25,6 @@ ASTNode* g_raiz_ast = NULL;
     int num_val;
     char *str_val;
     Tipo tipo_val;
-    Symbol* sym_ptr;
     struct ASTNode* ast_node;
 }
 
@@ -40,7 +37,6 @@ ASTNode* g_raiz_ast = NULL;
 %token T_LPAREN T_RPAREN T_LCHAVE T_RCHAVE T_PVIRGULA T_VIRGULA
 
 %type <tipo_val> Tipo
-%type <sym_ptr> PreDeclFunc
 %type <ast_node> Programa DeclFuncVar DeclGlobal DeclVarGlobal ListaDeclVarCont
 %type <ast_node> DeclFunc Bloco ListaParametros ListaParametrosCont
 %type <ast_node> DeclProg ListaDeclVar DeclVarLocal
@@ -92,23 +88,13 @@ DeclGlobal:
 
 DeclVarGlobal:
     Tipo T_ID
-    {
-        if (inserir_variavel(g_pilha_escopos, $2, $1, 0) == NULL) {
-            char erro_msg[100];
-            sprintf(erro_msg, "Simbolo global '%s' redeclarado.", $2);
-            yyerror(erro_msg);
-            YYABORT;
-        }
-    }
     ListaDeclVarCont T_PVIRGULA
     {
         ASTNode *id_node = criar_folha_id($2, yylineno);
-        id_node->tipo_dado = $1;
-        
         ASTNode *decl_node = criar_no(NO_DECL_VAR, id_node, NULL, NULL, yylineno);
         decl_node->tipo_dado = $1;
-        
-        decl_node->prox = $4; 
+        /* Encadeia com o resto das declarações da mesma linha (ex: int a, b, c;) */
+        decl_node->prox = $3; 
         
         $$ = decl_node;
         free($2);
@@ -120,13 +106,6 @@ ListaDeclVarCont:
     |
     ListaDeclVarCont T_VIRGULA T_ID
     {
-        if (inserir_variavel(g_pilha_escopos, $3, g_tipo_atual, 0) == NULL) {
-            char erro_msg[100];
-            sprintf(erro_msg, "Variavel '%s' redeclarada no mesmo escopo.", $3);
-            yyerror(erro_msg);
-            YYABORT;
-        }
-        
         ASTNode *id_node = criar_folha_id($3, yylineno);
            
         ASTNode *decl_node = criar_no(NO_DECL_VAR, id_node, NULL, NULL, yylineno);
@@ -144,36 +123,15 @@ ListaDeclVarCont:
     ;
 
 DeclFunc:
-    PreDeclFunc
-    {
-        g_funcao_atual = $1;
-        criar_novo_escopo(g_pilha_escopos);
-        g_ordem_var = 1;
-    }
+    Tipo T_ID
     T_LPAREN ListaParametros T_RPAREN
     Bloco
     {
-        remover_escopo_atual(g_pilha_escopos);
-        
-        ASTNode *id_func = criar_folha_id($1->nome, yylineno);
+        ASTNode *id_func = criar_folha_id($2, yylineno);
         
         $$ = criar_no(NO_DECL_FUNC, id_func, $4, $6, yylineno);
-        $$->tipo_dado = $1->tipo;
+        $$->tipo_dado = $1; /* Tipo de retorno da função */
         
-        g_funcao_atual = NULL;
-    }
-    ;
-
-PreDeclFunc:
-    Tipo T_ID
-    {
-        $$ = inserir_funcao(g_pilha_escopos, $2, $1, 0);
-        if ($$ == NULL) {
-            char erro_msg[100];
-            sprintf(erro_msg, "Simbolo global '%s' redeclarado.", $2);
-            yyerror(erro_msg);
-            YYABORT;
-        }
         free($2);
     }
     ;
@@ -187,11 +145,6 @@ ListaParametros:
 ListaParametrosCont:
     Tipo T_ID
     {
-        inserir_parametro(g_pilha_escopos, $2, $1, g_ordem_var);
-        adicionar_info_parametro(g_funcao_atual, $2, $1);
-        g_funcao_atual->num_args++;
-        g_ordem_var++;
-        
         ASTNode *id_node = criar_folha_id($2, yylineno);
         $$ = criar_no(NO_DECL_VAR, id_node, NULL, NULL, yylineno);
         $$->tipo_dado = $1;
@@ -201,11 +154,6 @@ ListaParametrosCont:
     |
     ListaParametrosCont T_VIRGULA Tipo T_ID
     {
-        inserir_parametro(g_pilha_escopos, $4, $3, g_ordem_var);
-        adicionar_info_parametro(g_funcao_atual, $4, $3);
-        g_funcao_atual->num_args++;
-        g_ordem_var++;
-        
         ASTNode *id_node = criar_folha_id($4, yylineno);
         ASTNode *param_node = criar_no(NO_DECL_VAR, id_node, NULL, NULL, yylineno);
         param_node->tipo_dado = $3;
@@ -225,14 +173,9 @@ ListaParametrosCont:
 
 DeclProg:
     T_PROGRAMA
-    {
-        criar_novo_escopo(g_pilha_escopos);
-    }
     Bloco
     {
-        remover_escopo_atual(g_pilha_escopos);
-        /* O DeclProg retorna apenas o bloco principal */
-        $$ = $3;
+        $$ = $2;
     }
     ;
 
@@ -263,12 +206,6 @@ DeclVarLocal:
     Tipo T_ID
     {
         g_tipo_atual = $1;
-        if (inserir_variavel(g_pilha_escopos, $2, $1, 0) == NULL) {
-            char erro_msg[100];
-            sprintf(erro_msg, "Variavel '%s' redeclarada no mesmo escopo.", $2);
-            yyerror(erro_msg);
-            YYABORT;
-        }
     }
     ListaDeclVarCont T_PVIRGULA
     {
@@ -315,9 +252,8 @@ Comando:
     ;
 
 BlocoComoComando:
-    { criar_novo_escopo(g_pilha_escopos); } 
     Bloco
-    { remover_escopo_atual(g_pilha_escopos); $$ = $2; }
+    { $$ = $1; }
     ;
 
 Expr:
@@ -328,12 +264,6 @@ Expr:
 Atribuicao: 
     T_ID T_ATRIB Expr
     {
-        if (pesquisar_simbolo(g_pilha_escopos, $1) == NULL) {
-            char erro_msg[100];
-            sprintf(erro_msg, "Variavel '%s' nao declarada.", $1); 
-            yyerror(erro_msg); 
-            YYABORT; 
-        } 
         ASTNode *id_node = criar_folha_id($1, yylineno);
         $$ = criar_no(NO_ATRIBUICAO, id_node, $3, NULL, yylineno);
         free($1);
@@ -389,11 +319,6 @@ UnExpr:
 PrimExpr:
     T_ID 
     {
-        if (pesquisar_simbolo(g_pilha_escopos, $1) == NULL) {
-            char erro_msg[100];
-            sprintf(erro_msg, "Simbolo '%s' nao declarado.", $1);
-            yyerror(erro_msg); YYABORT;
-        }
         $$ = criar_folha_id($1, yylineno);
         free($1);
     }
@@ -452,12 +377,6 @@ ComandoEnquanto:
 ComandoLeia:
     T_LEIA T_ID T_PVIRGULA 
     {
-        if (pesquisar_simbolo(g_pilha_escopos, $2) == NULL) {
-            char erro_msg[100];
-            sprintf(erro_msg, "Variavel '%s' nao declarada para leitura.", $2);
-            yyerror(erro_msg);
-            YYABORT; 
-        }
         ASTNode *id_node = criar_folha_id($2, yylineno);
         $$ = criar_no(NO_LEIA, id_node, NULL, NULL, yylineno);
         free($2);
@@ -495,25 +414,24 @@ int main(int argc, char **argv) {
         yyin = stdin;
     }
 
-    g_pilha_escopos = iniciar_pilha_tabela_simbolos();
-
     int parse_result = yyparse();
     if (parse_result == 0) {
-        /* printf("\n--- Conteudo Final da Tabela de Simbolos ---\n"); */
-        /* imprimir_pilha(g_pilha_escopos); */
-        
-        /* printf("\n--- Arvore Sintatica Abstrata (AST) ---\n"); */
-        /* imprimir_ast(g_raiz_ast, 0); */
-
         printf("\nAnalise sintatica bem-sucedida!\n");
 
         int semantico_result = verificar_semantica(g_raiz_ast);
         if(semantico_result == 0) {
-            /* realizar geração de código */
+            FILE *saida = fopen("saida.asm", "w");
+            if (!saida) {
+                fprintf(stderr, "Erro: Nao foi possivel criar o arquivo de saida 'saida.asm'\n");
+            } else {
+                printf("Iniciando geracao de codigo...\n");
+                /* gerar_codigo(g_raiz_ast, saida); */
+                fclose(saida);
+                printf("Geracao de codigo concluida. Saida em 'saida.asm'.\n");
+            }
         }
     }
 
-    eliminar_pilha_tabelas(g_pilha_escopos);
     liberar_ast(g_raiz_ast);
 
     if (yyin != stdin) {

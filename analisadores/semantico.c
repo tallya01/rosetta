@@ -78,6 +78,11 @@ void analisar_no(ASTNode* no, ScopeStack* pilha) {
                 }
                 atual = atual->prox;
             }
+            /* Se a lista de declarações globais continuar com uma função
+             * (ou outro tipo de declaração), precisamos continuar a análise
+             * a partir do nó 'atual', que é onde o loop parou. */
+            if (atual != NULL)
+                analisar_no(atual, pilha);
         }
         break;
 
@@ -213,7 +218,10 @@ void analisar_no(ASTNode* no, ScopeStack* pilha) {
     }
     
     /* Processa o próximo comando da lista encadeada, se houver */
-    if (no->prox != NULL && no->tipo != NO_DECL_VAR) {
+    if (no->prox != NULL && 
+        no->tipo != NO_DECL_VAR && /* Já tratado em loop interno */
+        no->tipo != NO_DECL_FUNC) { /* NO_DECL_FUNC é parte de uma lista de DeclGlobal */
+        
         analisar_no(no->prox, pilha);
     }
 }
