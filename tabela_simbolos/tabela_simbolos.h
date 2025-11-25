@@ -130,4 +130,7 @@ void eliminar_pilha_tabelas(ScopeStack* pilha);
  */
 void imprimir_pilha(ScopeStack* pilha);
 
+int eh_global(ScopeStack* pilha, char* nome);
+
+
 #endif // TABELA_SIMBOLOS_H

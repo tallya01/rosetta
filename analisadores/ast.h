@@ -23,7 +23,8 @@ typedef enum {
     NO_CHAMADA_FUNC,
     NO_LISTA,      /* Para sequências de comandos ou declarações */
     NO_NOVALINHA,
-    NO_NULO        /* Para nós vazios */
+    NO_NULO,        /* Para nós vazios */
+    NO_CADEIA_CAR
 } TipoNo;
 
 typedef struct ASTNode {
@@ -39,6 +40,7 @@ typedef struct ASTNode {
 
 ASTNode* criar_no(TipoNo tipo, ASTNode* f1, ASTNode* f2, ASTNode* f3, int linha);
 ASTNode* criar_folha_id(char* lexema, int linha);
+ASTNode* criar_folha_str(char* lexema, int linha);
 ASTNode* criar_folha_int(int valor, int linha);
 ASTNode* criar_folha_car(char* lexema, int linha);
 void imprimir_ast(ASTNode* no, int nivel);

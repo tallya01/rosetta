@@ -27,20 +27,15 @@ void analisar_no(ASTNode* no, ScopeStack* pilha);
 Tipo inferir_tipo_expressao(ASTNode* no, ScopeStack* pilha);
 
 /* --- Função Principal --- */
-int verificar_semantica(ASTNode* raiz) {
+int verificar_semantica(ASTNode* raiz, ScopeStack* pilha_semantica) {
     g_erros_semanticos = 0;
     
     printf("\n--- Iniciando Analise Semantica ---\n");
-    
-    /* Cria uma nova pilha de escopos para a fase semântica */
-    ScopeStack* pilha_semantica = iniciar_pilha_tabela_simbolos();
     
     /* Começa a visitação recursiva */
     if (raiz != NULL) {
         analisar_no(raiz, pilha_semantica);
     }
-    
-    eliminar_pilha_tabelas(pilha_semantica);
     
     if (g_erros_semanticos == 0) {
         printf("Analise semantica concluida com SUCESSO.\n");
@@ -57,11 +52,8 @@ void analisar_no(ASTNode* no, ScopeStack* pilha) {
 
     switch (no->tipo) {
         case NO_PROGRAMA:
-            /* O escopo global já é criado no início, mas podemos garantir */
-            criar_novo_escopo(pilha); 
             analisar_no(no->filho[0], pilha); /* DeclFuncVar */
             analisar_no(no->filho[1], pilha); /* DeclProg (Bloco Principal) */
-            remover_escopo_atual(pilha);
             break;
 
         case NO_DECL_VAR:
@@ -181,7 +173,9 @@ void analisar_no(ASTNode* no, ScopeStack* pilha) {
         case NO_ESCREVA:
             /* Pode escrever int, car ou string literal */
             /* Se filho for expressão, inferir */
-            if (no->filho[0]->tipo != NO_ID || pesquisar_simbolo(pilha, no->filho[0]->valor_lexico) != NULL) {
+            if (no->filho[0]->tipo == NO_CADEIA_CAR) {
+                // É uma string literal, não há tipo para inferir
+            } else if (no->filho[0]->tipo != NO_ID || pesquisar_simbolo(pilha, no->filho[0]->valor_lexico) != NULL) {
                  inferir_tipo_expressao(no->filho[0], pilha);
             }
             break;

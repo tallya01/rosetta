@@ -7,7 +7,7 @@
 #include "tabela_simbolos.h"
 #include "ast.h"
 #include "semantico.h"
-/* #include "gerador_codigo.h" */
+#include "gerador_codigo.h"
 
 extern int yylex();
 extern int yylineno;
@@ -388,7 +388,7 @@ ComandoEscreva:
     | T_ESCREVA T_CADEIA T_PVIRGULA
     {
         /* Tratamento de string literal no escreva */
-        ASTNode *str_node = criar_folha_id($2, yylineno);
+        ASTNode *str_node = criar_folha_str($2, yylineno);
         $$ = criar_no(NO_ESCREVA, str_node, NULL, NULL, yylineno);
         free($2);
     }
@@ -417,19 +417,24 @@ int main(int argc, char **argv) {
     int parse_result = yyparse();
     if (parse_result == 0) {
         printf("\nAnalise sintatica bem-sucedida!\n");
+        imprimir_ast(g_raiz_ast, 0);
 
-        int semantico_result = verificar_semantica(g_raiz_ast);
+        ScopeStack* tabela_simbolos = iniciar_pilha_tabela_simbolos();
+        int semantico_result = verificar_semantica(g_raiz_ast, tabela_simbolos);
+        
         if(semantico_result == 0) {
             FILE *saida = fopen("saida.asm", "w");
             if (!saida) {
                 fprintf(stderr, "Erro: Nao foi possivel criar o arquivo de saida 'saida.asm'\n");
             } else {
                 printf("Iniciando geracao de codigo...\n");
-                /* gerar_codigo(g_raiz_ast, saida); */
+                gerar_codigo(g_raiz_ast, saida, tabela_simbolos);
                 fclose(saida);
                 printf("Geracao de codigo concluida. Saida em 'saida.asm'.\n");
             }
         }
+        
+        eliminar_pilha_tabelas(tabela_simbolos);
     }
 
     liberar_ast(g_raiz_ast);

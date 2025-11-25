@@ -25,6 +25,14 @@ ASTNode* criar_folha_id(char* lexema, int linha) {
     return no;
 }
 
+ASTNode* criar_folha_str(char* lexema, int linha) {
+    ASTNode* no = criar_no(NO_CADEIA_CAR, NULL, NULL, NULL, linha);
+    if (no != NULL && lexema != NULL) {
+        no->valor_lexico = strdup(lexema); /* Copia a string */
+    }
+    return no;
+}
+
 ASTNode* criar_folha_int(int valor, int linha) {
     ASTNode* no = criar_no(NO_INT_CONST, NULL, NULL, NULL, linha);
     if (no != NULL) {
@@ -65,6 +73,11 @@ void imprimir_ast(ASTNode* no, int nivel) {
         case NO_INT_CONST: printf("INT: %d\n", no->valor_int); break;
         case NO_CAR_CONST: printf("CAR: %s\n", no->valor_lexico); break;
         case NO_CHAMADA_FUNC: printf("CHAMADA_FUNC\n"); break;
+        case NO_NOVALINHA: printf("NOVA_LINHA\n"); break;
+        case NO_RETORNE: printf("RETORNE\n"); break;
+        case NO_LISTA: printf("LISTA\n"); break;
+        case NO_NULO: printf("NULO\n"); break;
+        case NO_CADEIA_CAR: printf("CADEIA_CAR: %s\n", no->valor_lexico); break;
         default: printf("NO_TIPO_%d\n", no->tipo);
     }
 

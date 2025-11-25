@@ -216,3 +216,19 @@ void imprimir_pilha(ScopeStack* pilha) {
     }
     printf("==============================================================\n\n");
 }
+
+int eh_global(ScopeStack* pilha, char* nome) {
+    if (!pilha) return 0;
+
+    SymbolTable* escopo_global = pilha->topo;
+    Symbol* simbolo_atual = escopo_global->head;
+
+    while (simbolo_atual) {
+        if (strcmp(simbolo_atual->nome, nome) == 0) {
+            return 1; // Encontrado
+        }
+        simbolo_atual = simbolo_atual->proximo;
+    }
+
+    return 0;
+}
