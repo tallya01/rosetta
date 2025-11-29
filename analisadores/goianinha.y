@@ -415,12 +415,14 @@ int main(int argc, char **argv) {
     }
 
     int parse_result = yyparse();
+    int semantico_result = 1; /* Inicializa com erro, sucesso se a análise semântica passar */
+
     if (parse_result == 0) {
         printf("\nAnalise sintatica bem-sucedida!\n");
         /* imprimir_ast(g_raiz_ast, 0); */
 
         ScopeStack* tabela_simbolos = iniciar_pilha_tabela_simbolos();
-        int semantico_result = verificar_semantica(g_raiz_ast, tabela_simbolos);
+        semantico_result = verificar_semantica(g_raiz_ast, tabela_simbolos);
         
         if(semantico_result == 0) {
             FILE *saida = fopen("saida.asm", "w");
@@ -443,7 +445,7 @@ int main(int argc, char **argv) {
         fclose(yyin);
     }
     
-    return parse_result;
+    return parse_result || semantico_result;
 }
 
 void yyerror(const char *s) {
