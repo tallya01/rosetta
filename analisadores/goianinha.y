@@ -417,7 +417,7 @@ int main(int argc, char **argv) {
     int parse_result = yyparse();
     if (parse_result == 0) {
         printf("\nAnalise sintatica bem-sucedida!\n");
-        imprimir_ast(g_raiz_ast, 0);
+        /* imprimir_ast(g_raiz_ast, 0); */
 
         ScopeStack* tabela_simbolos = iniciar_pilha_tabela_simbolos();
         int semantico_result = verificar_semantica(g_raiz_ast, tabela_simbolos);

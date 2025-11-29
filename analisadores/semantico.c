@@ -116,8 +116,16 @@ void analisar_no(ASTNode* no, ScopeStack* pilha) {
                 }
             }
             
-            analisar_no(no->filho[2], pilha); 
+            /* 4. Processar corpo da função (NO_BLOCO) DENTRO do escopo atual */
+            ASTNode* bloco_corpo = no->filho[2];
+            if (bloco_corpo != NULL && bloco_corpo->tipo == NO_BLOCO) {
+                // Analisa declarações de variáveis locais do bloco
+                analisar_no(bloco_corpo->filho[0], pilha);
+                // Analisa comandos do bloco
+                analisar_no(bloco_corpo->filho[1], pilha);
+            }
 
+            /* 5. Remover escopo da função */
             remover_escopo_atual(pilha);
             
             /* Restaura contexto */
@@ -127,6 +135,9 @@ void analisar_no(ASTNode* no, ScopeStack* pilha) {
         break;
 
         case NO_BLOCO:
+            /* Todo bloco, seja de função, 'se', 'enquanto' ou 'programa',
+             * cria seu próprio escopo. A lógica em NO_DECL_FUNC foi ajustada
+             * para lidar com isso. */
             criar_novo_escopo(pilha);
             analisar_no(no->filho[0], pilha); /* Lista DeclVars Locais */
             analisar_no(no->filho[1], pilha); /* Lista Comandos */
@@ -213,8 +224,10 @@ void analisar_no(ASTNode* no, ScopeStack* pilha) {
     
     /* Processa o próximo comando da lista encadeada, se houver */
     if (no->prox != NULL && 
-        no->tipo != NO_DECL_VAR && /* Já tratado em loop interno */
-        no->tipo != NO_DECL_FUNC) { /* NO_DECL_FUNC é parte de uma lista de DeclGlobal */
+        /* A lista de declarações globais (DeclFuncVar) é uma lista encadeada via 'prox'.
+         * A exceção para NO_DECL_VAR é para evitar re-processar listas de variáveis
+         * que já são tratadas em um loop interno no seu próprio case. */
+        no->tipo != NO_DECL_VAR) {
         
         analisar_no(no->prox, pilha);
     }
