@@ -5,17 +5,17 @@
 #include "ast.h"
 #include "tabela_simbolos.h"
 
-// Variáveis globais para controle interno
+// --- Variáveis globais ---
 static FILE* out;
 static int label_counter = 0;
-static int string_literal_counter = 0; // Para labels de strings
+static int string_literal_counter = 0;
 static ScopeStack* g_pilha_escopos_gerador = NULL;
-static int g_offset_local = 0; // Controla o offset das variáveis locais no stack frame
-static int decl_global_atual = 1; // Flag para saber se estamos em declaração global
+static int g_offset_local = 0;
+static int decl_global_atual = 1;
 
-// Protótipos de funções internas
+// --- Protótipos ---
 void gerar_no(ASTNode* no);
-void gerar_cabecalho();
+void gerar_cabecalho(ASTNode* raiz);
 void gerar_declaracoes_globais(ASTNode* no);
 void gerar_rodape();
 void gerar_expressao(ASTNode* no);
@@ -26,41 +26,51 @@ void gerar_io(ASTNode* no);
 void gerar_funcao(ASTNode* no);
 void gerar_chamada(ASTNode* no);
 void gerar_declaracao_var(ASTNode* no);
+void empilhar_argumentos(ASTNode* arg, int* count); // Protótipo adicionado
 
-// Função auxiliar para criar labels únicos
+// --- Auxiliares ---
 char* novo_label() {
     char* buffer = (char*)malloc(20);
     sprintf(buffer, "L%d", label_counter++);
     return buffer;
 }
 
-// --- INTEGRAÇÃO COM TABELA DE SÍMBOLOS ---
 Symbol* obter_simbolo(char* nome) {
     return pesquisar_simbolo(g_pilha_escopos_gerador, nome);
 }
 
-// Função auxiliar para calcular o espaço necessário para variáveis locais em um escopo
+// Calcula tamanho das variáveis locais (excluindo parâmetros)
 int calcular_espaco_local(ASTNode* no) {
     if (no == NULL) return 0;
-
     int espaco = 0;
     ASTNode* atual = no;
 
-    // Se o nó é um bloco, começamos pelas suas declarações
+    // Se for um bloco, primeiro processa as declarações imediatas
     if (atual->tipo == NO_BLOCO) {
-        atual = atual->filho[0];
+        ASTNode* decls = atual->filho[0];
+        while (decls != NULL) {
+             // ListaDeclVar é uma lista encadeada de NO_DECL_VAR onde filho[2] é o próximo?
+             // No Yacc: Tipo id ';' DeclVar -> filho[2] é o resto.
+             // Ou DeclVar -> Epsilon.
+             if (decls->tipo == NO_DECL_VAR) {
+                 espaco += 4;
+                 decls = decls->filho[2]; // Seguindo a lógica do Yacc para listas de decl
+             } else {
+                 // Caso a lista de decls seja tratada de outra forma na AST (ex: prox)
+                 // Assumindo estrutura do Yacc: novo_no_declaracao_var($1, $2, $4)
+                 if (decls->filho[2] != NULL) decls = decls->filho[2];
+                 else break;
+             }
+        }
+        // Depois processa comandos internos
+        atual = no->filho[1];
     }
 
+    // Percorre a lista de comandos (usando 'prox')
     while (atual != NULL) {
-        if (atual->tipo == NO_DECL_VAR) {
-            espaco += 4; // Assumindo que cada variável ocupa 4 bytes
-        } else if (atual->tipo == NO_SE) {
-            // Para sub-blocos, calculamos o máximo espaço necessário, não a soma.
+        if (atual->tipo == NO_SE) {
             int espaco_if = calcular_espaco_local(atual->filho[1]);
-            int espaco_else = 0;
-            if (atual->filho[2] != NULL) {
-                espaco_else = calcular_espaco_local(atual->filho[2]);
-            }
+            int espaco_else = (atual->filho[2] != NULL) ? calcular_espaco_local(atual->filho[2]) : 0;
             espaco += (espaco_if > espaco_else) ? espaco_if : espaco_else;
         } else if (atual->tipo == NO_ENQUANTO) {
             espaco += calcular_espaco_local(atual->filho[1]);
@@ -76,189 +86,174 @@ int calcular_espaco_local(ASTNode* no) {
 int obter_offset(char* nome) {
     Symbol* s = obter_simbolo(nome);
     if (s) {
-        return s->ordem; // A 'ordem' agora armazenará o offset
+        return s->ordem; 
     }
-    return 0; // Fallback
+    return 0; 
 }
-// ------------------------------------------------------------------------------
 
+// --- Função Principal ---
 void gerar_codigo(ASTNode* raiz, FILE* saida, ScopeStack* pilha) {
     out = saida;
     if (!out) return;
-
     g_pilha_escopos_gerador = pilha;
 
     gerar_cabecalho(raiz);
-    
-    // A tabela de símbolos já está populada. Apenas gera o código.
-    gerar_no(raiz);
-
+    gerar_no(raiz); // Gera o restante (incluindo main se estiver na árvore como nó)
     gerar_rodape();
 }
+
 void gerar_declaracoes_globais(ASTNode* no) {
     if (no == NULL) {
         decl_global_atual = 0;
         return;
     };
     
+    // Lista de Declarações Globais (DeclFuncVar)
+    // No Yacc: DeclFuncVar -> ... | DeclFunc ...
+    
     if (no->tipo == NO_DECL_VAR) {
-        ASTNode* id_node = no->filho[0];
-        if (eh_global(g_pilha_escopos_gerador, id_node->valor_lexico)) {
-            fprintf(out, "_%s: .word 0\n", id_node->valor_lexico);
-        }
+        ASTNode* id_node = no->filho[1]; // No Yacc: filho[0]=Tipo, filho[1]=ID
+        fprintf(out, "_%s: .word 0\n", id_node->valor_lexico);
+        
+        // Recursão para o próximo (filho[2] baseado no novo_no_declaracao_var)
+        if (no->filho[2] != NULL) gerar_declaracoes_globais(no->filho[2]);
+        
     } else if (no->tipo == NO_DECL_FUNC) {
-        // Se encontrarmos uma função, geramos seu código completo aqui.
-        // Isso garante que todas as funções sejam declaradas antes do main.
         gerar_funcao(no);
+        // Se houver mais declarações após a função (depende da estrutura DeclFuncVar)
+        if (no->prox != NULL) gerar_declaracoes_globais(no->prox); 
     } else {
+        // Pode ser DeclProg (Programa) ou fim
         decl_global_atual = 0;
         return;
     }
-    gerar_declaracoes_globais(no->prox);
 }
 
 void gerar_cabecalho(ASTNode* raiz) {
     fprintf(out, ".data\n");
     fprintf(out, "newline: .asciiz \"\\n\"\n");
-    // Adiciona um literal para espaço, se necessário
     fprintf(out, "space: .asciiz \" \"\n");
 
-    // Pré-scan para strings literais (se necessário, mas por agora vamos gerar dinamicamente)
-    // ...
+    // Gera variáveis globais e funções antes do main
+    // O filho[0] de Programa é "DeclFuncVar"
+    if (raiz && raiz->filho[0]) {
+        gerar_declaracoes_globais(raiz->filho[0]);
+    }
 
-    gerar_declaracoes_globais(raiz->filho[0]); // Gera todas as variáveis e funções globais
     fprintf(out, ".text\n");
     fprintf(out, ".globl main\n\n");
 }
 
 void gerar_rodape() {
-    // Funções auxiliares de runtime se necessário
+    // Código auxiliar final
 }
 
-// Despachante principal recursivo
 void gerar_no(ASTNode* no) {
     if (no == NULL) return;
 
     switch(no->tipo) {
         case NO_PROGRAMA:
-            gerar_no(no->filho[0]); // Declarações globais e funções
-            
-            // O bloco principal (Programa)
+            // Globais processadas no cabeçalho.
+            // O filho[1] é "DeclProg" -> "programa Bloco"
+            // Logo filho[1]->filho[0] é o Bloco principal (assumindo estrutura)
             if (no->filho[1] != NULL) {
-                // Calcula o espaço local necessário para o escopo da main
-                int espaco_vars = calcular_espaco_local(no->filho[1]);
-                // Espaço para $ra, $fp (8 bytes) + variáveis, alinhado em 4 bytes
+                // Ajuste: DeclProg -> programa Bloco. 
+                // Se DeclProg for um nó intermediário, pegamos o filho dele.
+                // Se o parser retorna o Bloco direto em DeclProg, usamos ele.
+                ASTNode* blocoMain = no->filho[1]; 
+                
+                int espaco_vars = calcular_espaco_local(blocoMain);
                 int tamanho_frame = (espaco_vars + 8 + 3) & ~3;
 
                 fprintf(out, "\nmain:\n");
-                // Prólogo da main
                 fprintf(out, "  addiu $sp, $sp, -%d\n", tamanho_frame);
                 fprintf(out, "  sw $ra, %d($sp)\n", tamanho_frame - 4);
                 fprintf(out, "  sw $fp, %d($sp)\n", tamanho_frame - 8);
                 fprintf(out, "  move $fp, $sp\n");
                 
-                g_offset_local = 0; // Reseta offset para o main
+                g_offset_local = 0; 
                 
-                // Itera sobre a lista de comandos do bloco principal
-                ASTNode* comando = no->filho[1];
-                while (comando) {
-                    gerar_no(comando);
-                    comando = comando->prox;
+                // Processa o bloco principal
+                // Bloco -> { ListaDeclVar ListaComando }
+                // filho[0] = decls, filho[1] = comandos
+                if (blocoMain->tipo == NO_BLOCO) {
+                    gerar_no(blocoMain->filho[0]); // Declarações locais
+                    ASTNode* comando = blocoMain->filho[1];
+                    while (comando) {
+                        gerar_no(comando);
+                        comando = comando->prox;
+                    }
                 }
 
-                // Epílogo da main
                 fprintf(out, "  lw $ra, %d($sp)\n", tamanho_frame - 4);
                 fprintf(out, "  lw $fp, %d($sp)\n", tamanho_frame - 8);
                 fprintf(out, "  addiu $sp, $sp, %d\n", tamanho_frame);
-                fprintf(out, "  li $v0, 10\n"); // Syscall exit
+                fprintf(out, "  li $v0, 10\n"); 
                 fprintf(out, "  syscall\n");
             }
             break;
 
         case NO_DECL_VAR:
-            // A geração de variáveis globais foi movida para o cabeçalho.
-            // A geração de locais é tratada dentro dos blocos de função/main.
-            gerar_declaracao_var(no); // Ainda necessário para locais
+            gerar_declaracao_var(no);
+            // Recursão para o próximo na lista de declarações (filho[2])
+            if (no->filho[2] != NULL) gerar_no(no->filho[2]);
             break;
         
         case NO_DECL_FUNC:
-            // A geração de funções foi movida para o cabeçalho.
+            // Já gerado via declarações globais
             break;
 
         case NO_BLOCO:
             {
                 int offset_anterior = g_offset_local;
-                gerar_no(no->filho[0]); // Declarações locais
-                gerar_no(no->filho[1]); // Comandos
-                g_offset_local = offset_anterior; // Restaura offset do escopo pai
+                gerar_no(no->filho[0]); // Declarações
+                
+                ASTNode* stmt = no->filho[1]; // Comandos
+                while(stmt) {
+                    gerar_no(stmt);
+                    stmt = stmt->prox;
+                }
+                g_offset_local = offset_anterior;
             }
             break;
 
-        case NO_ATRIBUICAO:
-            gerar_atribuicao(no);
-            break;
-        case NO_SE:
-            gerar_if(no);
-            break;
-        case NO_ENQUANTO:
-            gerar_while(no);
-            break;
-        case NO_ESCREVA:
-        case NO_LEIA:
-            gerar_io(no);
-            break;
-        case NO_CHAMADA_FUNC:
-            gerar_chamada(no);
-            break;
+        case NO_ATRIBUICAO: gerar_atribuicao(no); break;
+        case NO_SE: gerar_if(no); break;
+        case NO_ENQUANTO: gerar_while(no); break;
+        case NO_ESCREVA: case NO_LEIA: gerar_io(no); break;
+        case NO_CHAMADA_FUNC: gerar_chamada(no); break;
+        
         case NO_RETORNE:
-            gerar_expressao(no->filho[0]); // Resultado em $a0
-            // O epílogo da função cuidará do 'jr $ra'
-            // Aqui, garantimos que o valor de retorno está em $v0
-            fprintf(out, "  move $v0, $a0\n");
-            // Pula para o final da função (epílogo)
-            // (Assumindo que cada função terá um label de fim)
-            // fprintf(out, "  j %s_end\n", nome_da_funcao_atual);
+            gerar_expressao(no->filho[0]); 
+            fprintf(out, "  move $v0, $a0\n"); 
             break;
             
         case NO_NOVALINHA:
-            fprintf(out, "  li $v0, 4\n");      // Syscall para imprimir string
-            fprintf(out, "  la $a0, newline\n"); // Carrega o endereço da string de nova linha
+            fprintf(out, "  li $v0, 4\n");
+            fprintf(out, "  la $a0, newline\n");
             fprintf(out, "  syscall\n");
             break;
 
         default:
-            // Para outros tipos de nós que podem ser expressões (ex: operadores)
-            // mas que são chamados no contexto de um comando (o que é raro, mas possível),
-            // podemos simplesmente tentar avaliá-los como expressão.
-            // Na maioria dos casos, isso não fará nada ou será inofensivo.
             gerar_expressao(no);
             break;
     }
     
-    // Gera o próximo comando na lista
-    if (no->prox != NULL) {
-        gerar_no(no->prox);
-    }
+    // Cuidado com recursão via prox aqui. 
+    // Blocos iteram manualmente. Declarações recursam via filho[2].
 }
 
 void gerar_declaracao_var(ASTNode* no) {
-    ASTNode* id_node = no->filho[0];
-    
-    // Se o escopo atual é global (verificado pela tabela de símbolos)
-    if (!decl_global_atual) { // Apenas para locais
-        // O offset agora é positivo a partir de $fp.
+    ASTNode* id_node = no->filho[1]; // filho[0]=tipo, filho[1]=id
+    if (!decl_global_atual) { 
         Symbol* s = obter_simbolo(id_node->valor_lexico);
         if (s) {
-            // A análise semântica deveria pré-calcular isso.
-            // Por enquanto, calculamos aqui.
             s->ordem = g_offset_local; 
-            g_offset_local += 4; // Próxima variável terá um offset maior.
+            g_offset_local += 4; 
         }
     }
 }
 
-
-// Avalia expressões e coloca resultado em $a0
 void gerar_expressao(ASTNode* no) {
     if (no == NULL) return;
 
@@ -276,46 +271,29 @@ void gerar_expressao(ASTNode* no) {
             }
             break;
 
-        case NO_ATRIBUICAO:
-            // Uma atribuição dentro de uma expressão deve ser avaliada
-            gerar_atribuicao(no);
-            break;
+        case NO_ATRIBUICAO: gerar_atribuicao(no); break;
+        case NO_CHAMADA_FUNC: gerar_chamada(no); break;
 
-        case NO_CHAMADA_FUNC:
-            gerar_chamada(no);
-            break;
-
-        case NO_SOMA:
-        case NO_SUB:
-        case NO_MULT:
-        case NO_DIV:
-        case NO_IGUAL:
-        case NO_DIF:
-        case NO_MAIOR:
-        case NO_MENOR:
-        case NO_MAIOR_IGUAL:
-        case NO_MENOR_IGUAL:
-        case NO_E:
-        case NO_OU:
-            // Lado esquerdo (LHS)
+        case NO_SOMA: case NO_SUB: case NO_MULT: case NO_DIV:
+        case NO_IGUAL: case NO_DIF: case NO_MAIOR: case NO_MENOR:
+        case NO_MAIOR_IGUAL: case NO_MENOR_IGUAL: case NO_E: case NO_OU:
             gerar_expressao(no->filho[0]);
-            // Empilha o resultado do LHS
             fprintf(out, "  addiu $sp, $sp, -4\n");
             fprintf(out, "  sw $a0, 0($sp)\n");
             
-            // Lado direito (RHS)
             gerar_expressao(no->filho[1]);
             
-            // Desempilha o LHS para $t1
             fprintf(out, "  lw $t1, 0($sp)\n");
             fprintf(out, "  addiu $sp, $sp, 4\n");
             
-            // Agora, $t1 = LHS, $a0 = RHS
             switch (no->tipo) {
                 case NO_SOMA: fprintf(out, "  add $a0, $t1, $a0\n"); break;
                 case NO_SUB:  fprintf(out, "  sub $a0, $t1, $a0\n"); break;
                 case NO_MULT: fprintf(out, "  mul $a0, $t1, $a0\n"); break;
-                case NO_DIV:  fprintf(out, "  div $t1, $a0\n  mflo $a0\n"); break;
+                case NO_DIV:  
+                    fprintf(out, "  div $zero, $t1, $a0\n"); 
+                    fprintf(out, "  mflo $a0\n"); 
+                    break;
                 case NO_IGUAL: fprintf(out, "  seq $a0, $t1, $a0\n"); break;
                 case NO_DIF:   fprintf(out, "  sne $a0, $t1, $a0\n"); break;
                 case NO_MAIOR: fprintf(out, "  sgt $a0, $t1, $a0\n"); break;
@@ -327,15 +305,12 @@ void gerar_expressao(ASTNode* no) {
                 default: break;
             }
             break;
-
-        default:
-            // Tipo de nó de expressão não tratado
-            break;
+        default: break;
     }
 }
 
 void gerar_atribuicao(ASTNode* no) {
-    gerar_expressao(no->filho[1]);
+    gerar_expressao(no->filho[1]); // Valor em $a0
     ASTNode* idNode = no->filho[0];
     if (eh_global(g_pilha_escopos_gerador, idNode->valor_lexico)) {
         fprintf(out, "  sw $a0, _%s\n", idNode->valor_lexico);
@@ -361,9 +336,7 @@ void gerar_if(ASTNode* no) {
     }
     
     fprintf(out, "%s:\n", labelEnd);
-    
-    free(labelElse);
-    free(labelEnd);
+    free(labelElse); free(labelEnd);
 }
 
 void gerar_while(ASTNode* no) {
@@ -377,8 +350,7 @@ void gerar_while(ASTNode* no) {
     fprintf(out, "  j %s\n", labelIni);
     fprintf(out, "%s:\n", labelFim);
     
-    free(labelIni);
-    free(labelFim);
+    free(labelIni); free(labelFim);
 }
 
 void gerar_io(ASTNode* no) {
@@ -394,23 +366,18 @@ void gerar_io(ASTNode* no) {
         }
     } 
     else if (no->tipo == NO_ESCREVA) {
-        // Se for uma string literal
-        if (no->filho[0]->tipo == NO_CADEIA_CAR) {
+        if (no->filho[0]->tipo == NO_CADEIA_CAR) { 
             char* str_label = (char*)malloc(20);
             sprintf(str_label, "str%d", string_literal_counter++);
-            
-            // Adiciona a string ao segmento .data
             fprintf(out, ".data\n");
             fprintf(out, "%s: .asciiz %s\n", str_label, no->filho[0]->valor_lexico);
             fprintf(out, ".text\n");
-            
-            // Gera código para imprimir a string
             fprintf(out, "  li $v0, 4\n");
             fprintf(out, "  la $a0, %s\n", str_label);
             free(str_label);
-        } else { // Se for uma expressão (int/car)
+        } else { 
             gerar_expressao(no->filho[0]);
-            fprintf(out, "  li $v0, 1\n"); // Syscall para imprimir inteiro
+            fprintf(out, "  li $v0, 1\n");
         }
         fprintf(out, "  syscall\n");
     }
@@ -419,9 +386,8 @@ void gerar_io(ASTNode* no) {
 void gerar_funcao(ASTNode* no) {
     char* nomeFunc = no->filho[0]->valor_lexico;
     
-    // Calcula o espaço local necessário para o corpo da função
+    // filho[2] é o Bloco da função
     int espaco_vars = calcular_espaco_local(no->filho[2]);
-    // Espaço para $ra, $fp (8 bytes) + variáveis, alinhado em 4 bytes
     int tamanho_frame = (espaco_vars + 8 + 3) & ~3;
 
     fprintf(out, "\n%s:\n", nomeFunc);
@@ -432,9 +398,42 @@ void gerar_funcao(ASTNode* no) {
     fprintf(out, "  sw $fp, %d($sp)\n", tamanho_frame - 8);
     fprintf(out, "  move $fp, $sp\n");
     
-    g_offset_local = 0; // Reset offset para vars locais da função
+    // Mapeamento de Parâmetros
+    // filho[1] é a ListaParametros. Segundo o Yacc, é uma lista encadeada de NO_DECL_VAR
+    ASTNode* params = no->filho[1];
+    int param_idx = 0;
     
-    // Processar corpo da função
+    // Como os argumentos são empilhados no caller:
+    // Se temos 3 args. Stack: [Arg3, Arg2, Arg1].
+    // $fp aponta para o topo do novo frame.
+    // O frame anterior começa em $fp + tamanho_frame.
+    // Arg1 está em ($fp + tamanho_frame + 0).
+    // Arg2 está em ($fp + tamanho_frame + 4).
+    // Isso assume empilhamento ArgN..Arg1.
+    
+    int param_offset_base = tamanho_frame;
+
+    while (params != NULL) {
+        // params é um nó NO_DECL_VAR: filho[0]=Tipo, filho[1]=ID, filho[2]=Prox
+        if (params->tipo == NO_DECL_VAR) {
+             ASTNode* idParam = params->filho[1];
+             if (idParam) {
+                 Symbol* s = obter_simbolo(idParam->valor_lexico);
+                 if (s) {
+                     s->ordem = param_offset_base + (param_idx * 4);
+                     param_idx++;
+                 }
+             }
+             params = params->filho[2]; // Avança na lista encadeada
+        } else {
+             // Caso a lista esteja vazia ou formato inesperado
+             break;
+        }
+    }
+
+    g_offset_local = 0; 
+    
+    // Gera corpo da função (Bloco)
     gerar_no(no->filho[2]);
     
     // Epílogo
@@ -445,20 +444,41 @@ void gerar_funcao(ASTNode* no) {
     fprintf(out, "  jr $ra\n");
 }
 
-void gerar_chamada(ASTNode* no) {
-    char* funcName = no->filho[0]->valor_lexico;
-    ASTNode* arg = no->filho[1];
-    int count = 0;
+// Empilha argumentos: Árvore recursiva à esquerda (NO_LISTA)
+// ((Arg1, Arg2), Arg3)
+// Queremos empilhar: Arg3, depois Arg2, depois Arg1.
+// Assim Arg1 fica no topo ($sp) para ser o primeiro offset.
+void empilhar_argumentos(ASTNode* arg, int* count) {
+    if (arg == NULL) return;
     
-    // Empilha os argumentos na ordem inversa (padrão C)
-    // Para simplificar, vamos empilhar na ordem direta.
-    while (arg != NULL) {
+    // De acordo com o Yacc: ListExpr ',' Expr -> NO_LISTA($1, $3)
+    // filho[0] = Esquerda (Resto da lista), filho[1] = Direita (Expr atual)
+    
+    if (arg->tipo == NO_LISTA) {
+        // Primeiro geramos/empilhamos o da Direita (Último desta sub-árvore)
+        gerar_expressao(arg->filho[1]);
+        fprintf(out, "  addiu $sp, $sp, -4\n");
+        fprintf(out, "  sw $a0, 0($sp)\n");
+        (*count)++;
+        
+        // Depois processamos a Esquerda recursivamente
+        empilhar_argumentos(arg->filho[0], count);
+        
+    } else {
+        // Base case: apenas uma Expr (primeiro argumento da lista original)
         gerar_expressao(arg);
         fprintf(out, "  addiu $sp, $sp, -4\n");
         fprintf(out, "  sw $a0, 0($sp)\n");
-        arg = arg->prox;
-        count++;
+        (*count)++;
     }
+}
+
+void gerar_chamada(ASTNode* no) {
+    char* funcName = no->filho[0]->valor_lexico;
+    ASTNode* arg = no->filho[1]; // ListExpr
+    int count = 0;
+    
+    empilhar_argumentos(arg, &count);
     
     fprintf(out, "  jal %s\n", funcName);
     
@@ -466,7 +486,5 @@ void gerar_chamada(ASTNode* no) {
         fprintf(out, "  addiu $sp, $sp, %d\n", count * 4);
     }
     
-    // O resultado da função (se houver) está em $v0.
-    // Movemos para $a0 para consistência com o resto do gerador de expressão.
     fprintf(out, "  move $a0, $v0\n");
 }
