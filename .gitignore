@@ -59,3 +59,8 @@ dkms.conf
 
 resultados_teste
 *.asm
+analisadores/lex.yy.c
+analisadores/y.tab.c
+analisadores/y.tab.h
+analisadores/goianinha
+tabela_simbolos/main
