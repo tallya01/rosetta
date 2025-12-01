@@ -20,7 +20,7 @@ ASTNode* criar_no(TipoNo tipo, ASTNode* f1, ASTNode* f2, ASTNode* f3, int linha)
 ASTNode* criar_folha_id(char* lexema, int linha) {
     ASTNode* no = criar_no(NO_ID, NULL, NULL, NULL, linha);
     if (no != NULL && lexema != NULL) {
-        no->valor_lexico = strdup(lexema); /* Copia a string */
+        no->valor_lexico = strdup(lexema);
     }
     return no;
 }
@@ -28,7 +28,7 @@ ASTNode* criar_folha_id(char* lexema, int linha) {
 ASTNode* criar_folha_str(char* lexema, int linha) {
     ASTNode* no = criar_no(NO_CADEIA_CAR, NULL, NULL, NULL, linha);
     if (no != NULL && lexema != NULL) {
-        no->valor_lexico = strdup(lexema); /* Copia a string */
+        no->valor_lexico = strdup(lexema);
     }
     return no;
 }
@@ -49,7 +49,6 @@ ASTNode* criar_folha_car(char* lexema, int linha) {
     return no;
 }
 
-/* Função auxiliar para imprimir a AST (visualização) */
 void imprimir_ast(ASTNode* no, int nivel) {
     if (no == NULL) return;
 

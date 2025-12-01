@@ -86,35 +86,3 @@ CARCONST        \'([^\'\n\\]|\\.)\'
 .                       { reportar_erro_lexico("CARACTERE INVALIDO"); }
 
 %%
-/* --- Seção 3: Código C Adicional --- */
-
-/* Função main() para permitir testes isolados.
- * Definir o macro GOIANINHA_PARSER para ignorar e evitar erro de duplicação.
- */
-#ifndef GOIANINHA_PARSER
-int main(int argc, char** argv) {
-    if (argc > 1) {
-        FILE *file = fopen(argv[1], "r");
-        if (!file) {
-            perror("Nao foi possivel abrir o arquivo");
-            return 1;
-        }
-        yyin = file;
-    }
-
-    int token;
-    printf("--- Iniciando Analise Lexica ---\n");
-    while ((token = yylex()) != 0) {
-        printf("Linha: %d, Lexema: '%s', Token: ", yylineno, yytext);
-        /* Este switch precisará ser atualizado com os novos tokens (T_SOMA, etc) */
-        if (token < 256) {
-             printf("'%c'\n", token);
-        } else {
-             /* Apenas um exemplo, pode ser expandido */
-             printf("%d (código)\n", token);
-        }
-    }
-    printf("--- Fim da Analise Lexica ---\n");
-    return 0;
-}
-#endif

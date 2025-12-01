@@ -49,18 +49,10 @@ int calcular_espaco_local(ASTNode* no) {
     if (atual->tipo == NO_BLOCO) {
         ASTNode* decls = atual->filho[0];
         while (decls != NULL) {
-             // ListaDeclVar é uma lista encadeada de NO_DECL_VAR onde filho[2] é o próximo?
-             // No Yacc: Tipo id ';' DeclVar -> filho[2] é o resto.
-             // Ou DeclVar -> Epsilon.
              if (decls->tipo == NO_DECL_VAR) {
                  espaco += 4;
-                 decls = decls->filho[2]; // Seguindo a lógica do Yacc para listas de decl
-             } else {
-                 // Caso a lista de decls seja tratada de outra forma na AST (ex: prox)
-                 // Assumindo estrutura do Yacc: novo_no_declaracao_var($1, $2, $4)
-                 if (decls->filho[2] != NULL) decls = decls->filho[2];
-                 else break;
              }
+             decls = decls->prox; // Avança para a próxima declaração na lista
         }
         // Depois processa comandos internos
         atual = no->filho[1];
@@ -115,8 +107,8 @@ void gerar_declaracoes_globais(ASTNode* no) {
         ASTNode* id_node = no->filho[1]; // No Yacc: filho[0]=Tipo, filho[1]=ID
         fprintf(out, "_%s: .word 0\n", id_node->valor_lexico);
         
-        // Recursão para o próximo (filho[2] baseado no novo_no_declaracao_var)
-        if (no->filho[2] != NULL) gerar_declaracoes_globais(no->filho[2]);
+        // Usa o ponteiro 'prox' para a próxima declaração global
+        if (no->prox != NULL) gerar_declaracoes_globais(no->prox);
         
     } else if (no->tipo == NO_DECL_FUNC) {
         gerar_funcao(no);
@@ -153,13 +145,8 @@ void gerar_no(ASTNode* no) {
 
     switch(no->tipo) {
         case NO_PROGRAMA:
-            // Globais processadas no cabeçalho.
-            // O filho[1] é "DeclProg" -> "programa Bloco"
-            // Logo filho[1]->filho[0] é o Bloco principal (assumindo estrutura)
+            // Globais já foram processadas no cabeçalho.
             if (no->filho[1] != NULL) {
-                // Ajuste: DeclProg -> programa Bloco. 
-                // Se DeclProg for um nó intermediário, pegamos o filho dele.
-                // Se o parser retorna o Bloco direto em DeclProg, usamos ele.
                 ASTNode* blocoMain = no->filho[1]; 
                 
                 int espaco_vars = calcular_espaco_local(blocoMain);
@@ -173,16 +160,9 @@ void gerar_no(ASTNode* no) {
                 
                 g_offset_local = 0; 
                 
-                // Processa o bloco principal
-                // Bloco -> { ListaDeclVar ListaComando }
-                // filho[0] = decls, filho[1] = comandos
+                // Processa o bloco principal, que já lida com suas sub-partes
                 if (blocoMain->tipo == NO_BLOCO) {
-                    gerar_no(blocoMain->filho[0]); // Declarações locais
-                    ASTNode* comando = blocoMain->filho[1];
-                    while (comando) {
-                        gerar_no(comando);
-                        comando = comando->prox;
-                    }
+                    gerar_no(blocoMain); 
                 }
 
                 fprintf(out, "  lw $ra, %d($sp)\n", tamanho_frame - 4);
@@ -195,8 +175,7 @@ void gerar_no(ASTNode* no) {
 
         case NO_DECL_VAR:
             gerar_declaracao_var(no);
-            // Recursão para o próximo na lista de declarações (filho[2])
-            if (no->filho[2] != NULL) gerar_no(no->filho[2]);
+            if (no->prox != NULL) gerar_no(no->prox);
             break;
         
         case NO_DECL_FUNC:
@@ -238,9 +217,6 @@ void gerar_no(ASTNode* no) {
             gerar_expressao(no);
             break;
     }
-    
-    // Cuidado com recursão via prox aqui. 
-    // Blocos iteram manualmente. Declarações recursam via filho[2].
 }
 
 void gerar_declaracao_var(ASTNode* no) {
@@ -399,17 +375,11 @@ void gerar_funcao(ASTNode* no) {
     fprintf(out, "  move $fp, $sp\n");
     
     // Mapeamento de Parâmetros
-    // filho[1] é a ListaParametros. Segundo o Yacc, é uma lista encadeada de NO_DECL_VAR
+    // filho[1] é a ListaParametros
     ASTNode* params = no->filho[1];
     int param_idx = 0;
-    
-    // Como os argumentos são empilhados no caller:
-    // Se temos 3 args. Stack: [Arg3, Arg2, Arg1].
-    // $fp aponta para o topo do novo frame.
-    // O frame anterior começa em $fp + tamanho_frame.
-    // Arg1 está em ($fp + tamanho_frame + 0).
-    // Arg2 está em ($fp + tamanho_frame + 4).
-    // Isso assume empilhamento ArgN..Arg1.
+
+    // Empilhamento ArgN..Arg1.
     
     int param_offset_base = tamanho_frame;
 
@@ -424,7 +394,7 @@ void gerar_funcao(ASTNode* no) {
                      param_idx++;
                  }
              }
-             params = params->filho[2]; // Avança na lista encadeada
+             params = params->prox; // Avança na lista encadeada
         } else {
              // Caso a lista esteja vazia ou formato inesperado
              break;
@@ -444,24 +414,19 @@ void gerar_funcao(ASTNode* no) {
     fprintf(out, "  jr $ra\n");
 }
 
-// Empilha argumentos: Árvore recursiva à esquerda (NO_LISTA)
-// ((Arg1, Arg2), Arg3)
-// Queremos empilhar: Arg3, depois Arg2, depois Arg1.
-// Assim Arg1 fica no topo ($sp) para ser o primeiro offset.
 void empilhar_argumentos(ASTNode* arg, int* count) {
     if (arg == NULL) return;
     
-    // De acordo com o Yacc: ListExpr ',' Expr -> NO_LISTA($1, $3)
     // filho[0] = Esquerda (Resto da lista), filho[1] = Direita (Expr atual)
     
     if (arg->tipo == NO_LISTA) {
-        // Primeiro geramos/empilhamos o da Direita (Último desta sub-árvore)
+        // Primeiro empilha o da Direita
         gerar_expressao(arg->filho[1]);
         fprintf(out, "  addiu $sp, $sp, -4\n");
         fprintf(out, "  sw $a0, 0($sp)\n");
         (*count)++;
         
-        // Depois processamos a Esquerda recursivamente
+        // Depois processa a Esquerda recursivamente
         empilhar_argumentos(arg->filho[0], count);
         
     } else {

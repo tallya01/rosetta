@@ -4,25 +4,25 @@
 #include <string.h>
 #include "semantico.h"
 
-/* Variáveis globais para controle interno da análise */
+// Variáveis globais para controle interno da análise
 static int g_erros_semanticos = 0;
-static Tipo g_tipo_retorno_esperado = TIPO_INT; /* Para validar 'retorne' */
-static int g_dentro_de_funcao = 0; /* Flag para saber se estamos dentro de uma função */
+static Tipo g_tipo_retorno_esperado = TIPO_INT; // Para validar 'retorne'
+static int g_dentro_de_funcao = 0; // Flag para saber se estamos dentro de uma função
 
-/* Helper para imprimir erros com linha */
+// Para imprimir erros com linha
 void erro_semantico(int linha, const char* mensagem) {
     fprintf(stderr, "ERRO SEMANTICO (Linha %d): %s\n", linha, mensagem);
     g_erros_semanticos++;
 }
 
-/* Retorna string do tipo para mensagens de erro */
+// Auxiliar para mensagens de erro
 const char* nome_tipo(Tipo t) {
     if (t == TIPO_INT) return "int";
     if (t == TIPO_CAR) return "car";
     return "indefinido";
 }
 
-/* Protótipos internos para recursão */
+// Funções internas para percorrer a árvore recursivamente
 void analisar_no(ASTNode* no, ScopeStack* pilha);
 Tipo inferir_tipo_expressao(ASTNode* no, ScopeStack* pilha);
 
@@ -32,7 +32,7 @@ int verificar_semantica(ASTNode* raiz, ScopeStack* pilha_semantica) {
     
     printf("\n--- Iniciando Analise Semantica ---\n");
     
-    /* Começa a visitação recursiva */
+    // Começa a percorrer a árvore
     if (raiz != NULL) {
         analisar_no(raiz, pilha_semantica);
     }
@@ -46,14 +46,13 @@ int verificar_semantica(ASTNode* raiz, ScopeStack* pilha_semantica) {
     }
 }
 
-/* --- Núcleo da Análise (Visitor) --- */
 void analisar_no(ASTNode* no, ScopeStack* pilha) {
     if (no == NULL) return;
 
     switch (no->tipo) {
         case NO_PROGRAMA:
-            analisar_no(no->filho[0], pilha); /* DeclFuncVar */
-            analisar_no(no->filho[1], pilha); /* DeclProg (Bloco Principal) */
+            analisar_no(no->filho[0], pilha); // DeclFuncVar
+            analisar_no(no->filho[1], pilha); // DeclProg
             break;
 
         case NO_DECL_VAR:
@@ -70,9 +69,7 @@ void analisar_no(ASTNode* no, ScopeStack* pilha) {
                 }
                 atual = atual->prox;
             }
-            /* Se a lista de declarações globais continuar com uma função
-             * (ou outro tipo de declaração), precisamos continuar a análise
-             * a partir do nó 'atual', que é onde o loop parou. */
+            // Continua declarações globais (caso a próxima seja função, o loop para sem concluir tudo)
             if (atual != NULL)
                 analisar_no(atual, pilha);
         }
@@ -80,7 +77,6 @@ void analisar_no(ASTNode* no, ScopeStack* pilha) {
 
         case NO_DECL_FUNC:
         {
-            /* 1. Inserir nome da função no escopo ATUAL (pai) */
             ASTNode* id_func = no->filho[0];
             Symbol* sym_func = inserir_funcao(pilha, id_func->valor_lexico, no->tipo_dado, 0);
             
@@ -90,21 +86,19 @@ void analisar_no(ASTNode* no, ScopeStack* pilha) {
                 erro_semantico(no->linha, msg);
             }
 
-            /* Configura contexto para validação de retorno */
+            // Contexto para validação de retorno
             Tipo tipo_anterior = g_tipo_retorno_esperado;
             int flag_anterior = g_dentro_de_funcao;
             g_tipo_retorno_esperado = no->tipo_dado;
             g_dentro_de_funcao = 1;
 
-            /* 2. Criar NOVO escopo para parâmetros e corpo */
             criar_novo_escopo(pilha);
 
-            /* 3. Processar parâmetros (NO_DECL_VAR na lista de params) */
+            // Processamento dos parâmetros
             ASTNode* params = no->filho[1];
             if (params != NULL) {
-                analisar_no(params, pilha); // Reutiliza lógica de NO_DECL_VAR
+                analisar_no(params, pilha);
                 
-                // Adiciona info dos parâmetros na struct da função (para checagem de chamadas)
                 if (sym_func != NULL) {
                     ASTNode* p = params;
                     while(p != NULL) {
@@ -116,31 +110,27 @@ void analisar_no(ASTNode* no, ScopeStack* pilha) {
                 }
             }
             
-            /* 4. Processar corpo da função (NO_BLOCO) DENTRO do escopo atual */
+            // Processamento do corpo da função
             ASTNode* bloco_corpo = no->filho[2];
             if (bloco_corpo != NULL && bloco_corpo->tipo == NO_BLOCO) {
-                // Analisa declarações de variáveis locais do bloco
+                // Analisa variáveis locais
                 analisar_no(bloco_corpo->filho[0], pilha);
-                // Analisa comandos do bloco
+                // Analisa comandos
                 analisar_no(bloco_corpo->filho[1], pilha);
             }
 
-            /* 5. Remover escopo da função */
             remover_escopo_atual(pilha);
             
-            /* Restaura contexto */
+            // Restaura contexto anterior
             g_tipo_retorno_esperado = tipo_anterior;
             g_dentro_de_funcao = flag_anterior;
         }
         break;
 
         case NO_BLOCO:
-            /* Todo bloco, seja de função, 'se', 'enquanto' ou 'programa',
-             * cria seu próprio escopo. A lógica em NO_DECL_FUNC foi ajustada
-             * para lidar com isso. */
             criar_novo_escopo(pilha);
-            analisar_no(no->filho[0], pilha); /* Lista DeclVars Locais */
-            analisar_no(no->filho[1], pilha); /* Lista Comandos */
+            analisar_no(no->filho[0], pilha); // Analisa variáveis locais
+            analisar_no(no->filho[1], pilha); // Analisa comandos
             remover_escopo_atual(pilha);
             break;
 
@@ -155,7 +145,6 @@ void analisar_no(ASTNode* no, ScopeStack* pilha) {
                 sprintf(msg, "Variavel '%s' nao declarada.", id_node->valor_lexico);
                 erro_semantico(no->linha, msg);
             } else {
-                /* Validação de tipos (Requisito Parte 2) */
                 Tipo t_expr = inferir_tipo_expressao(expr, pilha);
                 if (t_expr != sym->tipo) {
                     char msg[100];
@@ -171,10 +160,10 @@ void analisar_no(ASTNode* no, ScopeStack* pilha) {
         case NO_ENQUANTO:
         {
             ASTNode* expr = no->filho[0];
-            /* A expressão condicional deve ser avaliada. Em Goianinha não há bool, usa-se int. */
+            // Avalia expressão condicional
             inferir_tipo_expressao(expr, pilha);
             
-            analisar_no(no->filho[1], pilha); /* Bloco True / Execute */
+            analisar_no(no->filho[1], pilha); /* Bloco Then */
             if (no->filho[2] != NULL) {
                 analisar_no(no->filho[2], pilha); /* Bloco Else */
             }
@@ -182,10 +171,8 @@ void analisar_no(ASTNode* no, ScopeStack* pilha) {
         break;
         
         case NO_ESCREVA:
-            /* Pode escrever int, car ou string literal */
-            /* Se filho for expressão, inferir */
             if (no->filho[0]->tipo == NO_CADEIA_CAR) {
-                // É uma string literal, não há tipo para inferir
+                // String literal, não há tipo para inferir
             } else if (no->filho[0]->tipo != NO_ID || pesquisar_simbolo(pilha, no->filho[0]->valor_lexico) != NULL) {
                  inferir_tipo_expressao(no->filho[0], pilha);
             }
@@ -207,14 +194,14 @@ void analisar_no(ASTNode* no, ScopeStack* pilha) {
         }
         break;
         
-        /* Chamada recursiva padrão para nós que são apenas containers ou expressões isoladas como comando */
+        // Chamada recursiva padrão para nós que são apenas containers ou expressões isoladas como comando
         case NO_LISTA: 
-        case NO_CHAMADA_FUNC: /* Tratado no inferir, mas se aparecer como comando isolado: */
+        case NO_CHAMADA_FUNC:
              inferir_tipo_expressao(no, pilha);
              break;
 
         default:
-            /* Visita genérica aos filhos se não houver tratamento especial */
+            // Visita genérica aos filhos se não houver tratamento específico para o nó
             if (no->filho[0]) analisar_no(no->filho[0], pilha);
             if (no->filho[1]) analisar_no(no->filho[1], pilha);
             if (no->filho[2]) analisar_no(no->filho[2], pilha);
@@ -222,7 +209,7 @@ void analisar_no(ASTNode* no, ScopeStack* pilha) {
             break;
     }
     
-    /* Processa o próximo comando da lista encadeada, se houver */
+    // Processa comandos adicionais da lista, caso existam
     if (no->prox != NULL && 
         /* A lista de declarações globais (DeclFuncVar) é uma lista encadeada via 'prox'.
          * A exceção para NO_DECL_VAR é para evitar re-processar listas de variáveis
@@ -269,12 +256,10 @@ Tipo inferir_tipo_expressao(ASTNode* no, ScopeStack* pilha) {
                 return TIPO_INT;
             }
             
-            /* Validação de argumentos */
             ASTNode* arg = no->filho[1];
             int count = 0;
             
-            /* Percorre a lista de argumentos da chamada */
-            ParametroInfo* param_def = func->params_info; // Lista de parâmetros esperados
+            ParametroInfo* param_def = func->params_info;
             
             while (arg != NULL) {
                 Tipo t_arg = inferir_tipo_expressao(arg, pilha);
@@ -289,7 +274,7 @@ Tipo inferir_tipo_expressao(ASTNode* no, ScopeStack* pilha) {
                     }
                     param_def = param_def->proximo;
                 } else {
-                    /* Mais argumentos do que declarados */
+                    // Mais argumentos do que parâmetros declarados
                     // Será checado abaixo no count != num_args
                 }
                 arg = arg->prox;
@@ -306,17 +291,17 @@ Tipo inferir_tipo_expressao(ASTNode* no, ScopeStack* pilha) {
             return func->tipo;
         }
 
-        /* Operações Aritméticas: Exigem INT e retornam INT */
+        // Operações Aritméticas: Exigem INT e retornam INT
         case NO_SOMA:
         case NO_SUB:
         case NO_MULT:
         case NO_DIV:
         {
             Tipo t1 = inferir_tipo_expressao(no->filho[0], pilha);
-            Tipo t2 = TIPO_INT; /* Assume INT para checagem unária */
+            Tipo t2 = TIPO_INT; // Assume INT para checagem unária
             ASTNode* op2 = no->filho[1];
             
-            if (op2 != NULL) { /* Se for operação binária, confere o segundo operando */
+            if (op2 != NULL) { // Se for operação binária, confere o segundo operando
                 t2 = inferir_tipo_expressao(op2, pilha);
             }
 
@@ -328,7 +313,7 @@ Tipo inferir_tipo_expressao(ASTNode* no, ScopeStack* pilha) {
             return TIPO_INT;
         }
 
-        /* Operações Relacionais/Lógicas: Operandos devem ser iguais, Retorna INT (pseudo-bool) */
+        // Operações Relacionais/Lógicas: Operandos devem ser iguais, Retorna INT (pseudo-bool)
         case NO_IGUAL:
         case NO_DIF:
         case NO_MAIOR:
@@ -339,8 +324,6 @@ Tipo inferir_tipo_expressao(ASTNode* no, ScopeStack* pilha) {
             Tipo t1 = inferir_tipo_expressao(no->filho[0], pilha);
             Tipo t2 = inferir_tipo_expressao(no->filho[1], pilha);
             
-            /* Goianinha permite comparar CAR com CAR? 
-               O texto diz "Relacionais devem ser aplicados a operandos de mesmo tipo". */
             if (t1 != t2) {
                 erro_semantico(no->linha, "Comparacao entre tipos diferentes.");
             }

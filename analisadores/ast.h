@@ -34,8 +34,8 @@ typedef struct ASTNode {
     int valor_int;          /* Para constantes inteiras */
     Tipo tipo_dado;         /* TIPO_INT, TIPO_CAR (para análise semântica) */
     
-    struct ASTNode *filho[3]; /* Até 3 filhos (ex: IF expr ENTAO cmd SENAO cmd) */
-    struct ASTNode *prox;     /* Para listas encadeadas de comandos/decls */
+    struct ASTNode *filho[3]; /* Até 3 filhos (IF expr ENTAO cmd SENAO cmd) */
+    struct ASTNode *prox;     /* Para listas encadeadas */
 } ASTNode;
 
 ASTNode* criar_no(TipoNo tipo, ASTNode* f1, ASTNode* f2, ASTNode* f3, int linha);
