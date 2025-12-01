@@ -221,6 +221,9 @@ int eh_global(ScopeStack* pilha, char* nome) {
     if (!pilha) return 0;
 
     SymbolTable* escopo_global = pilha->topo;
+    while (escopo_global && escopo_global->proximo) {
+        escopo_global = escopo_global->proximo;
+    }
     Symbol* simbolo_atual = escopo_global->head;
 
     while (simbolo_atual) {
