@@ -304,7 +304,8 @@ void gerar_if(ASTNode* no) {
     fprintf(out, "  beqz $a0, %s\n", labelElse);
     
     gerar_no(no->filho[1]);
-    fprintf(out, "  j %s\n", labelEnd);
+    fprintf(out, "  la $t9, %s\n", labelEnd);
+    fprintf(out, "  jr $t9\n");
     
     fprintf(out, "%s:\n", labelElse);
     if (no->filho[2] != NULL) {
@@ -323,7 +324,8 @@ void gerar_while(ASTNode* no) {
     gerar_expressao(no->filho[0]);
     fprintf(out, "  beqz $a0, %s\n", labelFim);
     gerar_no(no->filho[1]);
-    fprintf(out, "  j %s\n", labelIni);
+    fprintf(out, "  la $t9, %s\n", labelIni);
+    fprintf(out, "  jr $t9\n");
     fprintf(out, "%s:\n", labelFim);
     
     free(labelIni); free(labelFim);
@@ -445,7 +447,8 @@ void gerar_chamada(ASTNode* no) {
     
     empilhar_argumentos(arg, &count);
     
-    fprintf(out, "  jal %s\n", funcName);
+    fprintf(out, "  la $t9, %s\n", funcName);
+    fprintf(out, "  jalr $t9\n");
     
     if (count > 0) {
         fprintf(out, "  addiu $sp, $sp, %d\n", count * 4);
