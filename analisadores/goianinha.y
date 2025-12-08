@@ -430,7 +430,7 @@ int main(int argc, char **argv) {
                 fprintf(stderr, "Erro: Nao foi possivel criar o arquivo de saida 'saida.asm'\n");
             } else {
                 printf("Iniciando geracao de codigo...\n");
-                gerar_codigo(g_raiz_ast, saida, tabela_simbolos);
+                /*gerar_codigo(g_raiz_ast, saida, tabela_simbolos);*/
                 fclose(saida);
                 printf("Geracao de codigo concluida. Saida em 'saida.asm'.\n");
             }

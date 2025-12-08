@@ -52,7 +52,7 @@ int calcular_espaco_local(ASTNode* no) {
              if (decls->tipo == NO_DECL_VAR) {
                  espaco += 4;
              }
-             decls = decls->prox; // Avança para a próxima declaração na lista
+             decls = decls->prox;
         }
         // Depois processa comandos internos
         atual = no->filho[1];
@@ -376,7 +376,6 @@ void gerar_funcao(ASTNode* no) {
     fprintf(out, "  sw $fp, %d($sp)\n", tamanho_frame - 8);
     fprintf(out, "  move $fp, $sp\n");
     
-    // Mapeamento de Parâmetros
     // filho[1] é a ListaParametros
     ASTNode* params = no->filho[1];
     int param_idx = 0;
@@ -396,7 +395,7 @@ void gerar_funcao(ASTNode* no) {
                      param_idx++;
                  }
              }
-             params = params->prox; // Avança na lista encadeada
+             params = params->prox;
         } else {
              // Caso a lista esteja vazia ou formato inesperado
              break;

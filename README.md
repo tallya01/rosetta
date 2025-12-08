@@ -1,8 +1,8 @@
 # Compilador para a Linguagem Goianinha
 
-Este repositório contém o código-fonte das etapas de análise de um compilador para a linguagem didática "Goianinha", criada pelo professor Thierson C. Rosa (UFG). O projeto é parte da disciplina de Compiladores do Instituto de Informática da Universidade Federal de Goiás.
+Este repositório contém o código-fonte de um compilador para a linguagem didática "Goianinha", criada pelo professor Thierson C. Rosa (UFG). O projeto é parte da disciplina de Compiladores do Instituto de Informática da Universidade Federal de Goiás.
 
-Nesta fase, foram implementados os componentes para a análise léxica, sintática e semântica de um programa-fonte, além das estruturas de dados de suporte. A última fase será a implementação de um gerador de código assembly.
+Neste projeto, foram implementados todos os componentes de um compilador, incluindo as análises léxica, sintática, semântica e a geração de código assembly. A geração de código assembly apresenta alguns problemas de corretude, e por isso **sua execução está comentada no arquivo .y**, porém as demais etapas estão consistentes. Caso deseje executar a geração de código, basta descomentar a linha 433 em `goianinha.y`
 
 ## Componentes Implementados
 
@@ -41,7 +41,7 @@ O analisador sintático, gerado com o **Bison**, verifica se a sequência de tok
 
 ### 4. Árvore Sintática Abstrata (AST)
 
-A AST é uma representação hierárquica do código-fonte, que captura sua estrutura de forma mais limpa que a árvore de análise concreta. Ela é construída pelo analisador sintático e serve como estrutura de dados de entrada para a análise semântica.
+A AST é uma representação hierárquica do código-fonte, que captura sua estrutura de forma mais limpa que a árvore de análise concreta. Ela é construída pelo analisador sintático e serve como estrutura de dados de entrada para as etapas seguintes.
 
   * **Localização**: `analisadores/`
   * **Implementação**: `ast.c` e `ast.h`
@@ -60,6 +60,16 @@ O analisador semântico percorre a AST para verificar a consistência e o signif
       * **Verificação de Declarações**: Garante que variáveis e funções não sejam redeclaradas no mesmo escopo.
       * **Verificação de Tipos**: Assegura que os tipos de dados em expressões, atribuições e chamadas de função sejam compatíveis.
       * **Reporte de Erros**: Emite mensagens de erro semântico detalhadas, como "variável não declarada" ou "tipos incompatíveis".
+
+### 6. Gerador de Código
+
+A etapa final do processo de compilação é a geração de código. O gerador de código percorre a Árvore Sintática Abstrata (AST), já validada e anotada pelo analisador semântico, e traduz as construções da linguagem Goianinha para código assembly.
+
+  * **Localização**: `analisadores/`
+  * **Implementação**: `gerador_codigo.c` e `gerador_codigo.h`
+  * **Funcionamento**:
+      * Para cada nó da AST, o gerador emite uma ou mais instruções em assembly que implementam a semântica correspondente.
+      * O código gerado é armazenado em um arquivo de saída padrão chamado `saida.asm`.
 
 ## Ferramentas Utilizadas
 
@@ -103,4 +113,32 @@ make
 # 3. Execute o analisador, passando um arquivo-fonte como argumento
 #    (substitua 'programa_exemplo.g' pelo seu arquivo).
 ./goianinha programa_exemplo.g
+```
+
+## Testes Automatizados
+
+O projeto inclui um conjunto de testes automatizados para verificar o funcionamento de todas as etapas do compilador, desde a análise léxica até a geração de código.
+
+Os testes consistem em um conjunto de programas-fonte em Goianinha, localizados em `testes/programas_teste/`, que incluem tanto códigos corretos quanto códigos com erros léxicos, sintáticos e semânticos.
+
+### Como Executar os Testes
+
+Para executar os testes, utilize o script `executor_testes.sh` através do `Makefile` no diretório `testes`.
+
+```bash
+# 1. Navegue até o diretório de testes
+cd testes/
+
+# 2. Execute o comando 'test' do Makefile
+make test
+```
+
+O script fará o seguinte:
+  * Compilará cada programa de teste em `programas_teste/`.
+  * Os resultados da compilação (saída padrão e erros) serão salvos em arquivos `.txt` no diretório `resultados_teste/`.
+  * Para os programas corretos, o código assembly gerado (`saida.asm`) será copiado para um arquivo correspondente no mesmo diretório (`<nome_do_teste>_code.asm`).
+
+Para limpar os resultados dos testes, execute:
+```bash
+make clean
 ```
